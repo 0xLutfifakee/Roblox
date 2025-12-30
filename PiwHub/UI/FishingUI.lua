@@ -30,7 +30,7 @@ local function LoadAutoFish()
         return result
     end
     -- Fallback to direct load
-    return loadstring(game:HttpGet("https://raw.githubusercontent.com/PiwHub/Modules/main/AutoFish.lua"))()
+    return loadstring(game:HttpGet("https://github.com/0xLutfifakee/Roblox/raw/refs/heads/main/PiwHub/Features/Fishing/AutoFish.lua"))()
 end
 
 function PiwHubUI.new()
