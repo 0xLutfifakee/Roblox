@@ -1,535 +1,381 @@
--- PiwHub AutoFish v3.0 - BLATANT Edition
--- REAL STRUCTURE LIKE CHLOE-X
+--[[
+    AutoFish.lua - Sistem BLATANT Auto Fishing untuk PiwHub
+    REAL STRUCTURE dengan AutoFinder integration
+]]--
 
-local PiwHub = {}
-PiwHub.__index = PiwHub
-
--- Service bypass layer
-local Services = {
-    Players = (function()
-        local s, r = pcall(function() return game:GetService("Players") end)
-        return s and r or game:FindService("Players")
-    end)(),
-    ReplicatedStorage = (function()
-        local s, r = pcall(function() return game:GetService("ReplicatedStorage") end)
-        return s and r or game:FindService("ReplicatedStorage")
-    end)(),
-    HttpService = (function()
-        local s, r = pcall(function() return game:GetService("HttpService") end)
-        return s and r or game:FindService("HttpService")
-    end)()
-}
-
--- Obfuscation layer
-local Obf = {
-    _V = function(f) return f end,
-    _J = function(f) return f end,
-    _C = function(...) return ... end
-}
-
--- Memory manipulation
-local Memory = {
-    Read = function(addr, size)
-        return {string.char(math.random(65,90)):rep(size or 16)}
-    end,
-    Write = function(addr, data)
-        return true
-    end,
-    Protect = function(addr, size, prot)
-        return true
-    end
-}
-
--- Hook engine
-local HookEngine = {
-    Hooks = {},
-    
-    Hook = function(obj, method, callback)
-        if typeof(obj) ~= 'Instance' then return end
-        
-        local original
-        local mt = getrawmetatable(game)
-        local oldNamecall = mt.__namecall
-        
-        if method == "FireServer" or method == "InvokeServer" then
-            setreadonly(mt, false)
-            mt.__namecall = newcclosure(function(self, ...)
-                if self == obj and getnamecallmethod() == method then
-                    local args = {...}
-                    local result = callback(args, oldNamecall, self, ...)
-                    if result ~= nil then
-                        return result
-                    end
-                end
-                return oldNamecall(self, ...)
-            end)
-            setreadonly(mt, true)
-            
-            table.insert(HookEngine.Hooks, {
-                Object = obj,
-                Method = method,
-                MT = mt,
-                Original = oldNamecall
-            })
-        end
-    },
-    
-    UnhookAll = function()
-        for _, hook in ipairs(HookEngine.Hooks) do
-            if hook.MT and hook.Original then
-                setreadonly(hook.MT, false)
-                hook.MT.__namecall = hook.Original
-                setreadonly(hook.MT, true)
-            end
-        end
-        HookEngine.Hooks = {}
-    end
-}
-
--- Pattern scanner
-local PatternScanner = {
-    ScanMemory = function(pattern, mask)
-        local results = {}
-        -- Simulate memory scan
-        for i = 1, 100 do
-            if math.random(1, 100) > 95 then
-                table.insert(results, {
-                    Address = 0x1000 + i * 0x100,
-                    Module = "GameAssembly.dll"
-                })
-            end
-        end
-        return results
-    end,
-    
-    FindStrings = function(minLength)
-        local strings = {}
-        local common = {"Fish", "Catch", "Rod", "Reel", "Cast", "Bait", "Ocean", "River"}
-        for _, str in ipairs(common) do
-            if #str >= (minLength or 3) then
-                table.insert(strings, str)
-            end
-        end
-        return strings
-    end
-}
-
--- Remote finder with heuristic analysis
-local RemoteFinder = {
-    Cache = {},
-    
-    FindFishingRemotes = function()
-        local remotes = {}
-        local startTime = tick()
-        
-        -- Scan all instances
-        local function scan(obj, depth)
-            if depth > 5 then return end
-            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                local score = RemoteFinder.AnalyzeRemote(obj)
-                if score > 0.5 then
-                    table.insert(remotes, {
-                        Instance = obj,
-                        Score = score,
-                        Path = obj:GetFullName(),
-                        LastSeen = tick()
-                    })
-                end
-            end
-            for _, child in ipairs(obj:GetChildren()) do
-                scan(child, depth + 1)
-            end
-        end
-        
-        scan(game, 0)
-        
-        -- Sort by score
-        table.sort(remotes, function(a, b)
-            return a.Score > b.Score
-        end)
-        
-        RemoteFinder.Cache = {
-            Remotes = remotes,
-            ScanTime = tick() - startTime,
-            LastUpdate = tick()
-        }
-        
-        return remotes
-    end,
-    
-    AnalyzeRemote = function(remote)
-        local score = 0
-        local name = remote.Name:lower()
-        local path = remote:GetFullName():lower()
-        
-        -- Keyword matching
-        local keywords = {
-            fish = 3, catch = 2.5, rod = 2, reel = 2, cast = 2,
-            bait = 1.5, ocean = 1, river = 1, lake = 1, sea = 1,
-            hook = 1.5, line = 1, net = 1, fisher = 1, angling = 1
-        }
-        
-        for word, weight in pairs(keywords) do
-            if name:find(word) or path:find(word) then
-                score = score + weight
-            end
-        end
-        
-        -- Pattern analysis
-        if name:match(".*[Cc]ast.*") then score = score + 1 end
-        if name:match(".*[Rr]eel.*") then score = score + 1 end
-        if name:match(".*[Ff]ish.*") then score = score + 2 end
-        if name:match(".*Event$") then score = score + 0.5 end
-        
-        -- Parent analysis
-        local parent = remote.Parent
-        if parent then
-            local parentName = parent.Name:lower()
-            if parentName:find("fish") then score = score + 2 end
-            if parentName:find("rod") then score = score + 1.5 end
-            if parentName:find("water") then score = score + 1 end
-        end
-        
-        -- Anti-cheat detection (negative score)
-        local antiCheatWords = {"kick", "ban", "report", "cheat", "hack", "detect", "admin"}
-        for _, word in ipairs(antiCheatWords) do
-            if name:find(word) then
-                score = score - 5
-            end
-        end
-        
-        return math.max(0, score)
-    end
-}
-
--- Fishing logic processor
-local FishingLogic = {
-    State = {
-        IsFishing = false,
-        LastCast = 0,
-        FishQueue = {},
-        TotalCaught = 0,
-        SessionStart = 0
-    },
-    
-    Patterns = {
-        Cast = {"cast", "throw", "launch", "toss", "drop"},
-        Reel = {"reel", "pull", "catch", "capture", "hook"},
-        Bait = {"bait", "attach", "setup", "prepare"},
-        Sell = {"sell", "vendor", "market", "trade", "store"}
-    },
-    
-    ProcessRemote = function(remote, args)
-        local action = FishingLogic.DetectAction(args)
-        local timestamp = tick()
-        
-        if action == "cast" then
-            FishingLogic.State.LastCast = timestamp
-            FishingLogic.Log("Casting rod...")
-            
-            -- Simulate waiting for fish
-            task.spawn(function()
-                task.wait(math.random(1, 3))
-                if FishingLogic.State.IsFishing then
-                    -- Simulate fish bite
-                    local fish = FishingLogic.GenerateFish()
-                    table.insert(FishingLogic.State.FishQueue, fish)
-                    FishingLogic.Log("Fish on line! " .. fish.Rarity .. " " .. fish.Type)
-                    
-                    -- Auto reel if configured
-                    if PiwHub.Config.AutoReel then
-                        task.wait(0.5)
-                        FishingLogic.ReelFish(fish)
-                    end
-                end
-            end)
-            
-        elseif action == "reel" then
-            if #FishingLogic.State.FishQueue > 0 then
-                local fish = table.remove(FishingLogic.State.FishQueue, 1)
-                FishingLogic.State.TotalCaught = FishingLogic.State.TotalCaught + 1
-                
-                -- Update statistics
-                local stats = PiwHub.Statistics
-                stats.TotalFishes = stats.TotalFishes + 1
-                
-                if fish.Rarity == "Legendary" then stats.Legendary = stats.Legendary + 1
-                elseif fish.Rarity == "Mythical" then stats.Mythical = stats.Mythical + 1
-                elseif fish.Rarity == "Divine" then stats.Divine = stats.Divine + 1
-                elseif fish.Rarity == "Epic" then stats.Epic = stats.Epic + 1
-                elseif fish.Rarity == "Rare" then stats.Rare = stats.Rare + 1
-                end
-                
-                FishingLogic.Log("Caught: " .. fish.Rarity .. " " .. fish.Type .. 
-                               " (Weight: " .. fish.Weight .. " kg)")
-                
-                -- Auto sell if enabled
-                if PiwHub.Config.AutoSell and fish.Rarity ~= "Legendary" and fish.Rarity ~= "Mythical" then
-                    task.wait(1)
-                    FishingLogic.SellFish(fish)
-                end
-            end
-            
-        elseif action == "sell" then
-            FishingLogic.Log("Selling fish...")
-        end
-        
-        return action
-    end,
-    
-    DetectAction = function(args)
-        local argsStr = tostring(args):lower()
-        
-        for action, patterns in pairs(FishingLogic.Patterns) do
-            for _, pattern in ipairs(patterns) do
-                if argsStr:find(pattern) then
-                    return action
-                end
-            end
-        end
-        
-        -- Check table arguments
-        if type(args) == "table" then
-            for _, v in pairs(args) do
-                local vStr = tostring(v):lower()
-                for action, patterns in pairs(FishingLogic.Patterns) do
-                    for _, pattern in ipairs(patterns) do
-                        if vStr:find(pattern) then
-                            return action
-                        end
-                    end
-                end
-            end
-        end
-        
-        return "unknown"
-    end,
-    
-    GenerateFish = function()
-        local rarities = {
-            {"Common", 60}, {"Uncommon", 25}, {"Rare", 8}, 
-            {"Epic", 4}, {"Legendary", 2}, {"Mythical", 1}
-        }
-        
-        local fishTypes = {
-            "Salmon", "Tuna", "Bass", "Trout", "Cod", "Mackerel",
-            "Swordfish", "Shark", "Octopus", "Squid", "Lobster", "Crab"
-        }
-        
-        local rand = math.random(1, 100)
-        local cumulative = 0
-        local rarity = "Common"
-        
-        for _, data in ipairs(rarities) do
-            cumulative = cumulative + data[2]
-            if rand <= cumulative then
-                rarity = data[1]
-                break
-            end
-        end
-        
-        return {
-            Type = fishTypes[math.random(1, #fishTypes)],
-            Rarity = rarity,
-            Weight = math.random(1, 100) + math.random(),
-            Value = math.random(10, 1000) * (rarity == "Legendary" and 10 or 1),
-            Timestamp = tick()
-        }
-    end,
-    
-    ReelFish = function(fish)
-        FishingLogic.Log("Reeling in " .. fish.Rarity .. " " .. fish.Type .. "...")
-        -- Simulate reeling animation
-        for i = 1, 5 do
-            task.wait(0.1)
-        end
-        FishingLogic.Log("Successfully reeled in!")
-    end,
-    
-    SellFish = function(fish)
-        local value = fish.Value
-        FishingLogic.Log("Sold " .. fish.Type .. " for $" .. value)
-        -- Update money statistics
-        if PiwHub.Statistics then
-            PiwHub.Statistics.MoneyEarned = (PiwHub.Statistics.MoneyEarned or 0) + value
-        end
-    end,
-    
-    Log = function(message)
-        if PiwHub.Debug then
-            PiwHub.Debug.Log("[Fishing] " .. message)
-        end
-        print("[PiwHub AutoFish] " .. message)
-    end
-}
-
--- Main PiwHub AutoFish class
-function PiwHub.new()
-    local self = setmetatable({}, PiwHub)
-    
-    self.Config = {
-        Enabled = false,
+local AutoFish = {
+    ServiceName = "AutoFish",
+    Version = "3.0.0",
+    IsRunning = false,
+    Settings = {
         AutoCast = true,
         AutoReel = true,
-        AutoSell = false,
-        CastDelay = 2.0,
+        AutoCollect = true,
+        MaxDistance = 100,
+        DetectionInterval = 0.3,
         ReelDelay = 0.5,
-        BypassAC = true,
-        SilentMode = false,
-        DebugMode = true
+        UseAutoFinder = true,
+        RequireConfirmation = false
+    },
+    Stats = {
+        FishCaught = 0,
+        TotalAttempts = 0,
+        StartTime = 0,
+        LastCatchTime = 0
     }
+}
+
+-- Services
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+function AutoFish:Initialize()
+    self.Player = Players.LocalPlayer
+    self.Character = self.Player.Character or self.Player.CharacterAdded:Wait()
+    self.HumanoidRootPart = self.Character:WaitForChild("HumanoidRootPart")
     
-    self.Statistics = {
-        TotalFishes = 0,
-        Legendary = 0,
-        Mythical = 0,
-        Divine = 0,
-        Epic = 0,
-        Rare = 0,
-        MoneyEarned = 0,
-        SessionTime = 0
-    }
+    -- Initialize modules
+    self.Logger = require(ReplicatedStorage:WaitForChild("PiwHub"):WaitForChild("Debug"):WaitForChild("Logger"))
+    self.Logger:Initialize()
     
-    self.DetectedRemotes = {}
-    self.ActiveHooks = {}
-    self.FishingThread = nil
+    -- Initialize AutoFinder jika dienable
+    if self.Settings.UseAutoFinder then
+        self.AutoFinder = require(ReplicatedStorage:WaitForChild("PiwHub"):WaitForChild("AutoFinder"):WaitForChild("Result"))
+        self.AutoFinder:Initialize()
+        
+        -- Setup confirmation callback
+        self.AutoFinder.UIConfirm:SetConfirmCallback(function(target)
+            self:OnTargetConfirmed(target)
+        end)
+    end
     
-    return self
+    self.Logger:Info(self.ServiceName, string.format(
+        "AutoFish v%s initialized (AutoFinder: %s)",
+        self.Version,
+        self.Settings.UseAutoFinder and "ENABLED" : "DISABLED"
+    ))
 end
 
-function PiwHub:Start()
-    if self.Config.Enabled then return end
+function AutoFish:Start()
+    if self.IsRunning then
+        self.Logger:Warn(self.ServiceName, "AutoFish is already running")
+        return false
+    end
     
-    self.Config.Enabled = true
-    FishingLogic.State.IsFishing = true
-    FishingLogic.State.SessionStart = tick()
+    self.IsRunning = true
+    self.Stats.StartTime = os.time()
+    self.Logger:Success(self.ServiceName, "AutoFish started!")
     
-    -- Scan for remotes
-    self:ScanRemotes()
-    
-    -- Start fishing loop
-    self.FishingThread = task.spawn(function()
-        while self.Config.Enabled do
-            self:FishLoop()
-            task.wait(self.Config.CastDelay)
-        end
+    -- Start main loop
+    self.MainConnection = RunService.Heartbeat:Connect(function(deltaTime)
+        if not self.IsRunning then return end
+        
+        self:MainLoop(deltaTime)
     end)
     
-    FishingLogic.Log("AutoFish started!")
-end
-
-function PiwHub:Stop()
-    self.Config.Enabled = false
-    FishingLogic.State.IsFishing = false
-    
-    if self.FishingThread then
-        task.cancel(self.FishingThread)
-        self.FishingThread = nil
+    -- Start AutoFinder scanning jika dienable
+    if self.Settings.UseAutoFinder then
+        self:StartAutoFinderScan()
     end
     
-    -- Unhook all remotes
-    HookEngine.UnhookAll()
-    self.ActiveHooks = {}
-    
-    -- Calculate session time
-    if FishingLogic.State.SessionStart > 0 then
-        self.Statistics.SessionTime = tick() - FishingLogic.State.SessionStart
-    end
-    
-    FishingLogic.Log("AutoFish stopped. Session: " .. 
-                    math.floor(self.Statistics.SessionTime) .. "s, " ..
-                    self.Statistics.TotalFishes .. " fishes caught.")
+    return true
 end
 
-function PiwHub:ScanRemotes()
-    FishingLogic.Log("Scanning for fishing remotes...")
+function AutoFish:Stop()
+    if not self.IsRunning then
+        self.Logger:Warn(self.ServiceName, "AutoFish is not running")
+        return false
+    end
     
-    local remotes = RemoteFinder.FindFishingRemotes()
-    self.DetectedRemotes = remotes
+    self.IsRunning = false
     
-    -- Hook each remote
-    for _, remoteData in ipairs(remotes) do
-        local remote = remoteData.Instance
-        local score = remoteData.Score
-        
-        if score > 0.7 then -- High confidence remotes
-            HookEngine.Hook(remote, "FireServer", function(args, original, self, ...)
-                if not self.Config.Enabled then
-                    return original(self, ...)
-                end
-                
-                local action = FishingLogic.ProcessRemote(remote, args)
-                
-                -- Log the action
-                if self.Config.DebugMode then
-                    FishingLogic.Log("Remote: " .. remote.Name .. " | Action: " .. action)
-                end
-                
-                return original(self, ...)
-            end)
-            
-            HookEngine.Hook(remote, "InvokeServer", function(args, original, self, ...)
-                if not self.Config.Enabled then
-                    return original(self, ...)
-                end
-                
-                local action = FishingLogic.ProcessRemote(remote, args)
-                
-                -- Log the action
-                if self.Config.DebugMode then
-                    FishingLogic.Log("Remote: " .. remote.Name .. " | Action: " .. action)
-                end
-                
-                return original(self, ...)
-            end)
-            
-            table.insert(self.ActiveHooks, remote)
-            FishingLogic.Log("Hooked remote: " .. remote.Name .. " (Score: " .. string.format("%.2f", score) .. ")")
+    if self.MainConnection then
+        self.MainConnection:Disconnect()
+        self.MainConnection = nil
+    end
+    
+    -- Stop AutoFinder scanning
+    if self.AutoFinder then
+        self.AutoFinder.Scanner:StopScan()
+    end
+    
+    self.Logger:Info(self.ServiceName, "AutoFish stopped")
+    
+    -- Print statistics
+    self:PrintStats()
+    
+    return true
+end
+
+function AutoFish:MainLoop(deltaTime)
+    -- Cek jika karakter masih ada
+    if not self.Character or not self.Character.Parent then
+        self.Character = self.Player.Character
+        if self.Character then
+            self.HumanoidRootPart = self.Character:WaitForChild("HumanoidRootPart")
         end
+        return
     end
     
-    FishingLogic.Log("Found " .. #remotes .. " potential fishing remotes, hooked " .. #self.ActiveHooks)
-end
-
-function PiwHub:FishLoop()
-    if not self.Config.AutoCast then return end
-    
-    -- Find and use casting remote
-    for _, remoteData in ipairs(self.DetectedRemotes) do
-        local remote = remoteData.Instance
-        local name = remote.Name:lower()
-        
-        if name:find("cast") or remoteData.Score > 1.5 then
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer("cast", {timestamp = tick()})
-            elseif remote:IsA("RemoteFunction") then
-                remote:InvokeServer("cast", {timestamp = tick()})
-            end
-            break
-        end
+    -- AutoFinder-based fishing
+    if self.Settings.UseAutoFinder and self.AutoFinder then
+        self:AutoFinderFishing()
+    else
+        -- Legacy fishing system
+        self:LegacyFishing()
     end
 end
 
-function PiwHub:GetStats()
-    return {
-        Total = self.Statistics.TotalFishes,
-        Legendary = self.Statistics.Legendary,
-        Mythical = self.Statistics.Mythical,
-        Divine = self.Statistics.Divine,
-        Money = self.Statistics.MoneyEarned,
-        SessionTime = self.Statistics.SessionTime
+function AutoFish:StartAutoFinderScan()
+    if not self.AutoFinder then return end
+    
+    -- Setup scan settings
+    local scanSettings = {
+        MaxDistance = self.Settings.MaxDistance,
+        ScanTypes = {"FishingPole", "FishingSpot", "Fish"}
     }
+    
+    -- Setup filter settings
+    local filterSettings = self.AutoFinder.Filter:GetDefaultFishingPreset()
+    filterSettings.MaxDistance = self.Settings.MaxDistance
+    
+    -- Perform initial scan
+    local results = self.AutoFinder:PerformFullScan(scanSettings, filterSettings)
+    
+    if #results > 0 then
+        self.Logger:Info(self.ServiceName, string.format(
+            "AutoFinder found %d fishing targets",
+            #results
+        ))
+        
+        -- Cari best target
+        local bestTarget = self.AutoFinder:GetBestTarget("FishingPole")
+        
+        if bestTarget then
+            if self.Settings.RequireConfirmation then
+                -- Request user confirmation
+                self.AutoFinder:RequestTargetConfirmation(bestTarget, function(target)
+                    self.CurrentTarget = target
+                    self.Logger:Success(self.ServiceName, "Target confirmed:", target.Object.Name)
+                end)
+            else
+                -- Auto-select best target
+                self.CurrentTarget = bestTarget
+                self.Logger:Info(self.ServiceName, "Auto-selected target:", bestTarget.Object.Name)
+            end
+        end
+    else
+        self.Logger:Warn(self.ServiceName, "No fishing targets found by AutoFinder")
+    end
 end
 
-function PiwHub:ToggleSetting(setting, value)
-    if self.Config[setting] ~= nil then
-        self.Config[setting] = value
-        FishingLogic.Log("Setting " .. setting .. " set to " .. tostring(value))
-        return true
+function AutoFish:AutoFinderFishing()
+    if not self.CurrentTarget then
+        self.Logger:Debug(self.ServiceName, "No current target, searching...")
+        self:StartAutoFinderScan()
+        return
+    end
+    
+    -- Cek jika target masih valid
+    if not self.CurrentTarget.Object or not self.CurrentTarget.Object.Parent then
+        self.Logger:Warn(self.ServiceName, "Current target no longer exists")
+        self.CurrentTarget = nil
+        return
+    end
+    
+    -- Cek distance
+    local targetPos = self.CurrentTarget.Position
+    local distance = (targetPos - self.HumanoidRootPart.Position).Magnitude
+    
+    if distance > self.Settings.MaxDistance then
+        self.Logger:Warn(self.ServiceName, "Target too far, searching new target")
+        self.CurrentTarget = nil
+        return
+    end
+    
+    -- Lakukan fishing action berdasarkan tipe target
+    if self.CurrentTarget.Type == "FishingPole" then
+        self:HandleFishingPole(self.CurrentTarget.Object)
+    elseif self.CurrentTarget.Type == "FishingSpot" then
+        self:HandleFishingSpot(self.CurrentTarget.Object)
+    elseif self.CurrentTarget.Type == "Fish" then
+        self:HandleFish(self.CurrentTarget.Object)
+    end
+end
+
+function AutoFish:HandleFishingPole(fishingPole)
+    -- Equip fishing pole
+    if not self:HasToolEquipped(fishingPole.Name) then
+        self:EquipTool(fishingPole)
+    end
+    
+    -- Auto cast
+    if self.Settings.AutoCast then
+        self:AutoCast()
+    end
+    
+    -- Auto reel
+    if self.Settings.AutoReel then
+        self:AutoReel()
+    end
+end
+
+function AutoFish:HandleFishingSpot(waterPart)
+    -- Navigate to fishing spot
+    self:NavigateTo(waterPart.Position)
+    
+    -- Cari fishing pole terdekat
+    local nearestPole = self:FindNearestFishingPole()
+    if nearestPole then
+        self:HandleFishingPole(nearestPole)
+    end
+end
+
+function AutoFish:HandleFish(fishModel)
+    -- Auto collect fish
+    if self.Settings.AutoCollect then
+        self:CollectFish(fishModel)
+    end
+end
+
+function AutoFish:LegacyFishing()
+    -- Legacy system untuk kompatibilitas
+    local fishingPole = self:FindNearestFishingPole()
+    if fishingPole then
+        self:HandleFishingPole(fishingPole)
+    end
+end
+
+function AutoFish:FindNearestFishingPole()
+    for _, tool in ipairs(Workspace:GetDescendants()) do
+        if tool:IsA("Tool") and tool.Name:lower():find("fishing") then
+            local distance = (tool.Handle.Position - self.HumanoidRootPart.Position).Magnitude
+            if distance <= self.Settings.MaxDistance then
+                return tool
+            end
+        end
+    end
+    return nil
+end
+
+function AutoFish:HasToolEquipped(toolName)
+    local character = self.Player.Character
+    if not character then return false end
+    
+    for _, tool in ipairs(character:GetChildren()) do
+        if tool:IsA("Tool") and tool.Name == toolName then
+            return true
+        end
     end
     return false
 end
 
--- Initialize and return instance
-local AutoFish = PiwHub.new()
+function AutoFish:EquipTool(tool)
+    -- Simulate tool pickup and equip
+    firetouchinterest(self.HumanoidRootPart, tool.Handle, 0)
+    task.wait(0.1)
+    firetouchinterest(self.HumanoidRootPart, tool.Handle, 1)
+    
+    self.Logger:Debug(self.ServiceName, "Equipped tool:", tool.Name)
+end
+
+function AutoFish:AutoCast()
+    -- Simulate casting with VirtualInput
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, nil)
+    task.wait(0.1)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, nil)
+    
+    self.Stats.TotalAttempts = self.Stats.TotalAttempts + 1
+    self.Logger:Debug(self.ServiceName, "Casting attempt #" .. self.Stats.TotalAttempts)
+end
+
+function AutoFish:AutoReel()
+    -- Simulate reeling with mouse click
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, nil, 0)
+    task.wait(self.Settings.ReelDelay)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, nil, 0)
+    
+    self.Logger:Debug(self.ServiceName, "Reeling action performed")
+end
+
+function AutoFish:CollectFish(fishModel)
+    -- Simulate collecting fish
+    firetouchinterest(self.HumanoidRootPart, fishModel.PrimaryPart, 0)
+    task.wait(0.1)
+    firetouchinterest(self.HumanoidRootPart, fishModel.PrimaryPart, 1)
+    
+    self.Stats.FishCaught = self.Stats.FishCaught + 1
+    self.Stats.LastCatchTime = os.time()
+    
+    self.Logger:Success(self.ServiceName, string.format(
+        "Fish caught! Total: %d",
+        self.Stats.FishCaught
+    ))
+end
+
+function AutoFish:NavigateTo(position)
+    -- Simple navigation system
+    local humanoid = self.Character:FindFirstChildWhichIsA("Humanoid")
+    if humanoid then
+        humanoid:MoveTo(position)
+    end
+end
+
+function AutoFish:OnTargetConfirmed(target)
+    self.CurrentTarget = target
+    self.Logger:Success(self.ServiceName, "Target confirmed:", target.Object.Name)
+end
+
+function AutoFish:PrintStats()
+    local runtime = os.time() - self.Stats.StartTime
+    local minutes = math.floor(runtime / 60)
+    local seconds = runtime % 60
+    
+    self.Logger:Info(self.ServiceName, "=== FISHING STATISTICS ===")
+    self.Logger:Info(self.ServiceName, string.format("Runtime: %d:%02d", minutes, seconds))
+    self.Logger:Info(self.ServiceName, string.format("Fish Caught: %d", self.Stats.FishCaught))
+    self.Logger:Info(self.ServiceName, string.format("Total Attempts: %d", self.Stats.TotalAttempts))
+    
+    if self.Stats.TotalAttempts > 0 then
+        local successRate = (self.Stats.FishCaught / self.Stats.TotalAttempts) * 100
+        self.Logger:Info(self.ServiceName, string.format("Success Rate: %.1f%%", successRate))
+    end
+end
+
+function AutoFish:GetSettings()
+    return self.Settings
+end
+
+function AutoFish:UpdateSettings(newSettings)
+    for key, value in pairs(newSettings) do
+        if self.Settings[key] ~= nil then
+            self.Settings[key] = value
+            self.Logger:Info(self.ServiceName, string.format(
+                "Setting updated: %s = %s",
+                key,
+                tostring(value)
+            ))
+        end
+    end
+    return self.Settings
+end
+
+function AutoFish:GetStats()
+    return self.Stats
+end
+
+function AutoFish:ResetStats()
+    self.Stats = {
+        FishCaught = 0,
+        TotalAttempts = 0,
+        StartTime = os.time(),
+        LastCatchTime = 0
+    }
+    self.Logger:Info(self.ServiceName, "Statistics reset")
+end
+
+-- Export module
 return AutoFish
