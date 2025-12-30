@@ -1,2117 +1,841 @@
--- PiwHub Fishing UI - Modern Interface
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+--[[
+    FishingUI.lua - GUI PiwHub style dengan debug panel
+    Advanced UI dengan real-time monitoring
+]]--
 
-local PiwHubUI = {}
-PiwHubUI.__index = PiwHubUI
-
--- Color palette
-local Colors = {
-    Primary = Color3.fromRGB(88, 101, 242),
-    Secondary = Color3.fromRGB(255, 115, 105),
-    Success = Color3.fromRGB(87, 242, 135),
-    Warning = Color3.fromRGB(242, 201, 76),
-    Danger = Color3.fromRGB(242, 76, 76),
-    Dark = Color3.fromRGB(25, 25, 35),
-    Darker = Color3.fromRGB(15, 15, 25),
-    Light = Color3.fromRGB(240, 240, 245),
-    Text = Color3.fromRGB(230, 230, 240),
-    TextSecondary = Color3.fromRGB(180, 180, 200)
+local FishingUI = {
+    ServiceName = "FishingUI",
+    Version = "2.0.0",
+    IsVisible = true,
+    Themes = {
+        Dark = {
+            Background = Color3.fromRGB(25, 25, 25),
+            Primary = Color3.fromRGB(0, 100, 255),
+            Secondary = Color3.fromRGB(0, 170, 255),
+            Text = Color3.fromRGB(255, 255, 255),
+            Accent = Color3.fromRGB(255, 165, 0)
+        },
+        Light = {
+            Background = Color3.fromRGB(240, 240, 240),
+            Primary = Color3.fromRGB(0, 120, 215),
+            Secondary = Color3.fromRGB(0, 150, 255),
+            Text = Color3.fromRGB(30, 30, 30),
+            Accent = Color3.fromRGB(255, 140, 0)
+        }
+    }
 }
 
--- Load AutoFish module
-local AutoFish
-local function LoadAutoFish()
-    local success, result = pcall(function()
-        return require(script.Parent.Parent.Features.Fishing.AutoFish)
+-- Services
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+function FishingUI:Initialize(autoFishModule)
+    self.Player = Players.LocalPlayer
+    self.PlayerGui = self.Player:WaitForChild("PlayerGui")
+    self.AutoFish = autoFishModule
+    
+    -- Initialize Logger
+    self.Logger = require(game:GetService("ReplicatedStorage"):WaitForChild("PiwHub"):WaitForChild("Debug"):WaitForChild("Logger"))
+    
+    -- Load AutoFinder UI jika tersedia
+    local success, autoFinder = pcall(function()
+        return require(game:GetService("ReplicatedStorage"):WaitForChild("PiwHub"):WaitForChild("AutoFinder"):WaitForChild("UIConfirm"))
     end)
+    
     if success then
-        return result
+        self.AutoFinderUI = autoFinder
     end
-    -- Fallback to direct load
-    return loadstring(game:HttpGet("https://raw.githubusercontent.com/0xLutfifakee/Roblox/refs/heads/main/PiwHub/Features/Fishing/AutoFish.lua"))()
+    
+    self:CreateUI()
+    self:SetupEventHandlers()
+    
+    self.Logger:Info(self.ServiceName, "FishingUI initialized")
 end
 
-function PiwHubUI.new()
-    local self = setmetatable({}, PiwHubUI)
-    
-    self.Elements = {}
-    self.IsVisible = true
-    self.Minimized = false
-    
-    -- Try to load AutoFish
-    AutoFish = LoadAutoFish()
-    
-    return self
-end
-
-function PiwHubUI:CreateWindow()
-    -- Create main screen gui
+function FishingUI:CreateUI()
+    -- ScreenGui utama
     self.ScreenGui = Instance.new("ScreenGui")
-    self.ScreenGui.Name = "PiwHubFishingUI"
-    self.ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    self.ScreenGui.DisplayOrder = 999
-    self.ScreenGui.Parent = game:GetService("CoreGui")
+    self.ScreenGui.Name = "PiwHub_FishingUI"
+    self.ScreenGui.DisplayOrder = 10
+    self.ScreenGui.ResetOnSpawn = false
+    self.ScreenGui.Parent = self.PlayerGui
     
-    -- Main container
-    self.MainFrame = Instance.new("Frame")
-    self.MainFrame.Size = UDim2.new(0, 500, 0, 600)
-    self.MainFrame.Position = UDim2.new(0.5, -250, 0.5, -300)
-    self.MainFrame.BackgroundColor3 = Colors.Dark
-    self.MainFrame.BackgroundTransparency = 0.05
-    self.MainFrame.BorderSizePixel = 0
+    -- Main Container (draggable)
+    self.MainContainer = Instance.new("Frame")
+    self.MainContainer.Name = "MainContainer"
+    self.MainContainer.Size = UDim2.new(0, 350, 0, 500)
+    self.MainContainer.Position = UDim2.new(0.05, 0, 0.3, 0)
+    self.MainContainer.BackgroundColor3 = self.Themes.Dark.Background
+    self.MainContainer.BorderColor3 = self.Themes.Dark.Primary
+    self.MainContainer.BorderSizePixel = 2
+    self.MainContainer.BackgroundTransparency = 0.05
+    self.MainContainer.Parent = self.ScreenGui
     
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, 12)
-    UICorner.Parent = self.MainFrame
+    -- Corner
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = self.MainContainer
     
-    -- Drop shadow
-    local DropShadow = Instance.new("ImageLabel")
-    DropShadow.Name = "DropShadow"
-    DropShadow.Parent = self.MainFrame
-    DropShadow.AnchorPoint = Vector2.new(0.5, 0.5)
-    DropShadow.BackgroundTransparency = 1
-    DropShadow.Position = UDim2.new(0.5, 0, 0.5, 4)
-    DropShadow.Size = UDim2.new(1, 44, 1, 44)
-    DropShadow.Image = "rbxassetid://6014261993"
-    DropShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-    DropShadow.ImageTransparency = 0.5
-    DropShadow.ScaleType = Enum.ScaleType.Slice
-    DropShadow.SliceCenter = Rect.new(49, 49, 450, 450)
-    DropShadow.ZIndex = -1
+    -- Drop Shadow
+    local shadow = Instance.new("ImageLabel")
+    shadow.Name = "Shadow"
+    shadow.Size = UDim2.new(1, 10, 1, 10)
+    shadow.Position = UDim2.new(0, -5, 0, -5)
+    shadow.BackgroundTransparency = 1
+    shadow.Image = "rbxassetid://1316045217"
+    shadow.ImageColor3 = Color3.new(0, 0, 0)
+    shadow.ImageTransparency = 0.8
+    shadow.ScaleType = Enum.ScaleType.Slice
+    shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+    shadow.Parent = self.MainContainer
     
-    -- Title bar
-    self.TitleBar = self:CreateTitleBar()
+    -- Title Bar (draggable area)
+    self.TitleBar = Instance.new("Frame")
+    self.TitleBar.Name = "TitleBar"
+    self.TitleBar.Size = UDim2.new(1, 0, 0, 40)
+    self.TitleBar.BackgroundColor3 = self.Themes.Dark.Primary
+    self.TitleBar.BorderSizePixel = 0
+    self.TitleBar.Parent = self.MainContainer
     
-    -- Tab buttons
-    self.Tabs = self:CreateTabs()
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 8)
+    titleCorner.Parent = self.TitleBar
     
-    -- Content area
-    self.ContentFrame = Instance.new("Frame")
-    self.ContentFrame.Size = UDim2.new(1, -40, 1, -120)
-    self.ContentFrame.Position = UDim2.new(0, 20, 0, 100)
-    self.ContentFrame.BackgroundTransparency = 1
+    -- Title Text
+    local titleText = Instance.new("TextLabel")
+    titleText.Name = "Title"
+    titleText.Size = UDim2.new(1, -80, 1, 0)
+    titleText.Position = UDim2.new(0, 10, 0, 0)
+    titleText.BackgroundTransparency = 1
+    titleText.Text = "🎣 PIWHUB FISHING BOT"
+    titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleText.Font = Enum.Font.GothamBold
+    titleText.TextSize = 18
+    titleText.TextXAlignment = Enum.TextXAlignment.Left
+    titleText.Parent = self.TitleBar
     
-    -- Create tab contents
-    self.TabContents = {
-        Main = self:CreateMainTab(),
-        Settings = self:CreateSettingsTab(),
-        Debug = self:CreateDebugTab(),
-        Statistics = self:CreateStatsTab()
-    }
-    
-    -- Show default tab
-    self:SwitchTab("Main")
-    
-    -- Assemble UI
-    self.TitleBar.Parent = self.MainFrame
-    self.Tabs.Parent = self.MainFrame
-    self.ContentFrame.Parent = self.MainFrame
-    
-    self.MainFrame.Parent = self.ScreenGui
-    
-    -- Initialize with animation
-    self.MainFrame.Position = UDim2.new(0.5, -250, 0.4, -300)
-    self.MainFrame.BackgroundTransparency = 1
-    
-    local tweenIn = TweenService:Create(self.MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {
-        Position = UDim2.new(0.5, -250, 0.5, -300),
-        BackgroundTransparency = 0.05
-    })
-    tweenIn:Play()
-    
-    -- Setup keybinds
-    self:SetupKeybinds()
-    
-    return self
-end
-
-function PiwHubUI:CreateTitleBar()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 50)
-    frame.BackgroundTransparency = 1
-    
-    -- Logo/Title
-    local title = Instance.new("TextLabel")
-    title.Text = "PiwHub  •  AutoFish"
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 18
-    title.TextColor3 = Colors.Primary
-    title.BackgroundTransparency = 1
-    title.Size = UDim2.new(0, 200, 1, 0)
-    title.Position = UDim2.new(0, 20, 0, 0)
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    
-    -- Close button
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Text = "×"
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.TextSize = 24
-    closeBtn.TextColor3 = Colors.Text
-    closeBtn.BackgroundColor3 = Colors.Darker
-    closeBtn.Size = UDim2.new(0, 30, 0, 30)
-    closeBtn.Position = UDim2.new(1, -40, 0.5, -15)
+    -- Close Button
+    self.CloseButton = Instance.new("TextButton")
+    self.CloseButton.Name = "CloseButton"
+    self.CloseButton.Size = UDim2.new(0, 30, 0, 30)
+    self.CloseButton.Position = UDim2.new(1, -35, 0.5, -15)
+    self.CloseButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    self.CloseButton.Text = "✕"
+    self.CloseButton.TextColor3 = Color3.white
+    self.CloseButton.Font = Enum.Font.GothamBold
+    self.CloseButton.TextSize = 16
+    self.CloseButton.Parent = self.TitleBar
     
     local closeCorner = Instance.new("UICorner")
-    closeCorner.CornerRadius = UDim.new(0, 6)
-    closeCorner.Parent = closeBtn
+    closeCorner.CornerRadius = UDim.new(0, 4)
+    closeCorner.Parent = self.CloseButton
     
-    closeBtn.MouseButton1Click:Connect(function()
-        self:Close()
-    end)
+    -- Minimize Button
+    self.MinimizeButton = Instance.new("TextButton")
+    self.MinimizeButton.Name = "MinimizeButton"
+    self.MinimizeButton.Size = UDim2.new(0, 30, 0, 30)
+    self.MinimizeButton.Position = UDim2.new(1, -70, 0.5, -15)
+    self.MinimizeButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    self.MinimizeButton.Text = "─"
+    self.MinimizeButton.TextColor3 = Color3.white
+    self.MinimizeButton.Font = Enum.Font.GothamBold
+    self.MinimizeButton.TextSize = 16
+    self.MinimizeButton.Parent = self.TitleBar
     
-    -- Minimize button
-    local minBtn = Instance.new("TextButton")
-    minBtn.Text = "−"
-    minBtn.Font = Enum.Font.GothamBold
-    minBtn.TextSize = 24
-    minBtn.TextColor3 = Colors.Text
-    minBtn.BackgroundColor3 = Colors.Darker
-    minBtn.Size = UDim2.new(0, 30, 0, 30)
-    minBtn.Position = UDim2.new(1, -80, 0.5, -15)
+    local minimizeCorner = Instance.new("UICorner")
+    minimizeCorner.CornerRadius = UDim.new(0, 4)
+    minimizeCorner.Parent = self.MinimizeButton
     
-    local minCorner = Instance.new("UICorner")
-    minCorner.CornerRadius = UDim.new(0, 6)
-    minCorner.Parent = minBtn
+    -- Content Area
+    self.Content = Instance.new("Frame")
+    self.Content.Name = "Content"
+    self.Content.Size = UDim2.new(1, -20, 1, -60)
+    self.Content.Position = UDim2.new(0, 10, 0, 50)
+    self.Content.BackgroundTransparency = 1
+    self.Content.Parent = self.MainContainer
     
-    minBtn.MouseButton1Click:Connect(function()
-        self:ToggleMinimize()
-    end)
+    -- Scrollable Content
+    self.ScrollingFrame = Instance.new("ScrollingFrame")
+    self.ScrollingFrame.Name = "Scroller"
+    self.ScrollingFrame.Size = UDim2.new(1, 0, 1, 0)
+    self.ScrollingFrame.BackgroundTransparency = 1
+    self.ScrollingFrame.BorderSizePixel = 0
+    self.ScrollingFrame.ScrollBarThickness = 6
+    self.ScrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
+    self.ScrollingFrame.Parent = self.Content
     
-    title.Parent = frame
-    closeBtn.Parent = frame
-    minBtn.Parent = frame
+    local uiListLayout = Instance.new("UIListLayout")
+    uiListLayout.Padding = UDim.new(0, 10)
+    uiListLayout.Parent = self.ScrollingFrame
     
-    -- Make draggable
-    self:MakeDraggable(frame, self.MainFrame)
+    -- Status Section
+    self:CreateStatusSection()
     
-    return frame
+    -- Controls Section
+    self:CreateControlsSection()
+    
+    -- Settings Section
+    self:CreateSettingsSection()
+    
+    -- AutoFinder Section
+    self:CreateAutoFinderSection()
+    
+    -- Stats Section
+    self:CreateStatsSection()
+    
+    -- Debug Section
+    self:CreateDebugSection()
+    
+    -- Update canvas size
+    self.ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, self.ScrollingFrame.UIListLayout.AbsoluteContentSize.Y)
 end
 
-function PiwHubUI:CreateTabs()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -40, 0, 40)
-    frame.Position = UDim2.new(0, 20, 0, 60)
-    frame.BackgroundTransparency = 1
-    
-    local tabs = {"Main", "Settings", "Debug", "Statistics"}
-    local buttons = {}
-    
-    for i, tabName in ipairs(tabs) do
-        local btn = Instance.new("TextButton")
-        btn.Text = tabName
-        btn.Font = Enum.Font.GothamMedium
-        btn.TextSize = 14
-        btn.TextColor3 = Colors.TextSecondary
-        btn.BackgroundColor3 = Colors.Darker
-        btn.Size = UDim2.new(0.22, -5, 1, 0)
-        btn.Position = UDim2.new((i-1) * 0.25, 0, 0, 0)
-        btn.AutoButtonColor = false
-        
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 8)
-        corner.Parent = btn
-        
-        btn.MouseEnter:Connect(function()
-            if self.CurrentTab ~= tabName then
-                TweenService:Create(btn, TweenInfo.new(0.2), {
-                    BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-                }):Play()
-            end
-        end)
-        
-        btn.MouseLeave:Connect(function()
-            if self.CurrentTab ~= tabName then
-                TweenService:Create(btn, TweenInfo.new(0.2), {
-                    BackgroundColor3 = Colors.Darker
-                }):Play()
-            end
-        end)
-        
-        btn.MouseButton1Click:Connect(function()
-            self:SwitchTab(tabName)
-        end)
-        
-        buttons[tabName] = btn
-        btn.Parent = frame
-    end
-    
-    self.TabButtons = buttons
-    return frame
-end
-
-function PiwHubUI:CreateMainTab()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundTransparency = 1
-    frame.Visible = false
-    
-    -- Status indicator
+function FishingUI:CreateStatusSection()
     local statusFrame = Instance.new("Frame")
+    statusFrame.Name = "StatusSection"
     statusFrame.Size = UDim2.new(1, 0, 0, 80)
-    statusFrame.BackgroundColor3 = Colors.Darker
-    statusFrame.BorderSizePixel = 0
+    statusFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    statusFrame.BackgroundTransparency = 0.2
+    statusFrame.Parent = self.ScrollingFrame
     
     local statusCorner = Instance.new("UICorner")
-    statusCorner.CornerRadius = UDim.new(0, 8)
+    statusCorner.CornerRadius = UDim.new(0, 6)
     statusCorner.Parent = statusFrame
     
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Text = "STATUS: STOPPED"
-    statusLabel.Font = Enum.Font.GothamBold
-    statusLabel.TextSize = 16
-    statusLabel.TextColor3 = Colors.Danger
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Size = UDim2.new(1, -20, 0.5, 0)
-    statusLabel.Position = UDim2.new(0, 10, 0, 10)
-    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    local statusTitle = Instance.new("TextLabel")
+    statusTitle.Name = "Title"
+    statusTitle.Size = UDim2.new(1, -10, 0, 25)
+    statusTitle.Position = UDim2.new(0, 5, 0, 5)
+    statusTitle.BackgroundTransparency = 1
+    statusTitle.Text = "📊 STATUS"
+    statusTitle.TextColor3 = self.Themes.Dark.Secondary
+    statusTitle.Font = Enum.Font.GothamBold
+    statusTitle.TextSize = 16
+    statusTitle.TextXAlignment = Enum.TextXAlignment.Left
+    statusTitle.Parent = statusFrame
     
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Text = "Ready to start fishing automation"
-    infoLabel.Font = Enum.Font.Gotham
-    infoLabel.TextSize = 12
-    infoLabel.TextColor3 = Colors.TextSecondary
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Size = UDim2.new(1, -20, 0.5, 0)
-    infoLabel.Position = UDim2.new(0, 10, 0.5, 0)
-    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    -- Status Indicator
+    self.StatusIndicator = Instance.new("Frame")
+    self.StatusIndicator.Name = "Indicator"
+    self.StatusIndicator.Size = UDim2.new(0, 12, 0, 12)
+    self.StatusIndicator.Position = UDim2.new(1, -20, 0, 10)
+    self.StatusIndicator.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    self.StatusIndicator.Parent = statusFrame
     
-    -- Main toggle button
-    local toggleBtn = Instance.new("TextButton")
-    toggleBtn.Text = "START AUTO FISHING"
-    toggleBtn.Font = Enum.Font.GothamBold
-    toggleBtn.TextSize = 16
-    toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    toggleBtn.BackgroundColor3 = Colors.Success
-    toggleBtn.Size = UDim2.new(1, 0, 0, 50)
-    toggleBtn.Position = UDim2.new(0, 0, 0, 100)
-    toggleBtn.AutoButtonColor = false
+    local indicatorCorner = Instance.new("UICorner")
+    indicatorCorner.CornerRadius = UDim.new(1, 0)
+    indicatorCorner.Parent = self.StatusIndicator
     
-    local toggleCorner = Instance.new("UICorner")
-    toggleCorner.CornerRadius = UDim.new(0, 8)
-    toggleCorner.Parent = toggleBtn
+    self.StatusText = Instance.new("TextLabel")
+    self.StatusText.Name = "StatusText"
+    self.StatusText.Size = UDim2.new(1, -20, 0, 20)
+    self.StatusText.Position = UDim2.new(0, 10, 0, 35)
+    self.StatusText.BackgroundTransparency = 1
+    self.StatusText.Text = "❌ Stopped"
+    self.StatusText.TextColor3 = Color3.fromRGB(255, 100, 100)
+    self.StatusText.Font = Enum.Font.Gotham
+    self.StatusText.TextSize = 14
+    self.StatusText.TextXAlignment = Enum.TextXAlignment.Left
+    self.StatusText.Parent = statusFrame
     
-    -- Options frame
-    local optionsFrame = Instance.new("Frame")
-    optionsFrame.Size = UDim2.new(1, 0, 0, 200)
-    optionsFrame.Position = UDim2.new(0, 0, 0, 170)
-    optionsFrame.BackgroundTransparency = 1
+    self.TargetText = Instance.new("TextLabel")
+    self.TargetText.Name = "TargetText"
+    self.TargetText.Size = UDim2.new(1, -20, 0, 20)
+    self.TargetText.Position = UDim2.new(0, 10, 0, 55)
+    self.TargetText.BackgroundTransparency = 1
+    self.TargetText.Text = "🎯 Target: None"
+    self.TargetText.TextColor3 = Color3.fromRGB(200, 200, 255)
+    self.TargetText.Font = Enum.Font.Gotham
+    self.TargetText.TextSize = 12
+    self.TargetText.TextXAlignment = Enum.TextXAlignment.Left
+    self.TargetText.Parent = statusFrame
+end
+
+function FishingUI:CreateControlsSection()
+    local controlsFrame = Instance.new("Frame")
+    controlsFrame.Name = "ControlsSection"
+    controlsFrame.Size = UDim2.new(1, 0, 0, 100)
+    controlsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    controlsFrame.BackgroundTransparency = 0.2
+    controlsFrame.Parent = self.ScrollingFrame
     
-    -- Auto Cast toggle
-    local castToggle = self:CreateToggle("Auto Cast", true, function(value)
-        if AutoFish then
-            AutoFish:ToggleSetting("AutoCast", value)
-        end
+    local controlsCorner = Instance.new("UICorner")
+    controlsCorner.CornerRadius = UDim.new(0, 6)
+    controlsCorner.Parent = controlsFrame
+    
+    local controlsTitle = Instance.new("TextLabel")
+    controlsTitle.Name = "Title"
+    controlsTitle.Size = UDim2.new(1, -10, 0, 25)
+    controlsTitle.Position = UDim2.new(0, 5, 0, 5)
+    controlsTitle.BackgroundTransparency = 1
+    controlsTitle.Text = "🎮 CONTROLS"
+    controlsTitle.TextColor3 = self.Themes.Dark.Secondary
+    controlsTitle.Font = Enum.Font.GothamBold
+    controlsTitle.TextSize = 16
+    controlsTitle.TextXAlignment = Enum.TextXAlignment.Left
+    controlsTitle.Parent = controlsFrame
+    
+    -- Start Button
+    self.StartButton = Instance.new("TextButton")
+    self.StartButton.Name = "StartButton"
+    self.StartButton.Size = UDim2.new(0.45, 0, 0, 35)
+    self.StartButton.Position = UDim2.new(0.025, 0, 0.5, 0)
+    self.StartButton.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+    self.StartButton.Text = "▶ START"
+    self.StartButton.TextColor3 = Color3.white
+    self.StartButton.Font = Enum.Font.GothamBold
+    self.StartButton.TextSize = 14
+    self.StartButton.Parent = controlsFrame
+    
+    local startCorner = Instance.new("UICorner")
+    startCorner.CornerRadius = UDim.new(0, 6)
+    startCorner.Parent = self.StartButton
+    
+    -- Stop Button
+    self.StopButton = Instance.new("TextButton")
+    self.StopButton.Name = "StopButton"
+    self.StopButton.Size = UDim2.new(0.45, 0, 0, 35)
+    self.StopButton.Position = UDim2.new(0.525, 0, 0.5, 0)
+    self.StopButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    self.StopButton.Text = "⏹ STOP"
+    self.StopButton.TextColor3 = Color3.white
+    self.StopButton.Font = Enum.Font.GothamBold
+    self.StopButton.TextSize = 14
+    self.StopButton.Parent = controlsFrame
+    
+    local stopCorner = Instance.new("UICorner")
+    stopCorner.CornerRadius = UDim.new(0, 6)
+    stopCorner.Parent = self.StopButton
+end
+
+function FishingUI:CreateSettingsSection()
+    local settingsFrame = Instance.new("Frame")
+    settingsFrame.Name = "SettingsSection"
+    settingsFrame.Size = UDim2.new(1, 0, 0, 200)
+    settingsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    settingsFrame.BackgroundTransparency = 0.2
+    settingsFrame.Parent = self.ScrollingFrame
+    
+    local settingsCorner = Instance.new("UICorner")
+    settingsCorner.CornerRadius = UDim.new(0, 6)
+    settingsCorner.Parent = settingsFrame
+    
+    local settingsTitle = Instance.new("TextLabel")
+    settingsTitle.Name = "Title"
+    settingsTitle.Size = UDim2.new(1, -10, 0, 25)
+    settingsTitle.Position = UDim2.new(0, 5, 0, 5)
+    settingsTitle.BackgroundTransparency = 1
+    settingsTitle.Text = "⚙ SETTINGS"
+    settingsTitle.TextColor3 = self.Themes.Dark.Secondary
+    settingsTitle.Font = Enum.Font.GothamBold
+    settingsTitle.TextSize = 16
+    settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
+    settingsTitle.Parent = settingsFrame
+    
+    -- Auto Cast Toggle
+    self:CreateToggle(settingsFrame, "Auto Cast", 30, self.AutoFish.Settings.AutoCast, function(value)
+        self.AutoFish:UpdateSettings({AutoCast = value})
     end)
-    castToggle.Position = UDim2.new(0, 0, 0, 0)
-    castToggle.Parent = optionsFrame
     
-    -- Auto Reel toggle
-    local reelToggle = self:CreateToggle("Auto Reel", true, function(value)
-        if AutoFish then
-            AutoFish:ToggleSetting("AutoReel", value)
-        end
+    -- Auto Reel Toggle
+    self:CreateToggle(settingsFrame, "Auto Reel", 60, self.AutoFish.Settings.AutoReel, function(value)
+        self.AutoFish:UpdateSettings({AutoReel = value})
     end)
-    reelToggle.Position = UDim2.new(0, 0, 0, 40)
-    reelToggle.Parent = optionsFrame
     
-    -- Auto Sell toggle
-    local sellToggle = self:CreateToggle("Auto Sell", false, function(value)
-        if AutoFish then
-            AutoFish:ToggleSetting("AutoSell", value)
-        end
+    -- Auto Collect Toggle
+    self:CreateToggle(settingsFrame, "Auto Collect", 90, self.AutoFish.Settings.AutoCollect, function(value)
+        self.AutoFish:UpdateSettings({AutoCollect = value})
     end)
-    sellToggle.Position = UDim2.new(0, 0, 0, 80)
-    sellToggle.Parent = optionsFrame
     
-    -- Bypass AC toggle
-    local bypassToggle = self:CreateToggle("Bypass Anti-Cheat", true, function(value)
-        if AutoFish then
-            AutoFish:ToggleSetting("BypassAC", value)
-        end
+    -- Use AutoFinder Toggle
+    self:CreateToggle(settingsFrame, "Use AutoFinder", 120, self.AutoFish.Settings.UseAutoFinder, function(value)
+        self.AutoFish:UpdateSettings({UseAutoFinder = value})
     end)
-    bypassToggle.Position = UDim2.new(0, 0, 0, 120)
-    bypassToggle.Parent = optionsFrame
     
-    -- Scan button
-    local scanBtn = Instance.new("TextButton")
-    scanBtn.Text = "SCAN FOR REMOTES"
-    scanBtn.Font = Enum.Font.GothamMedium
-    scanBtn.TextSize = 14
-    scanBtn.TextColor3 = Colors.Text
-    scanBtn.BackgroundColor3 = Colors.Primary
-    scanBtn.Size = UDim2.new(1, 0, 0, 40)
-    scanBtn.Position = UDim2.new(0, 0, 0, 380)
-    scanBtn.AutoButtonColor = false
+    -- Require Confirmation Toggle
+    self:CreateToggle(settingsFrame, "Require Confirmation", 150, self.AutoFish.Settings.RequireConfirmation, function(value)
+        self.AutoFish:UpdateSettings({RequireConfirmation = value})
+    end)
+    
+    -- Max Distance Slider
+    self:CreateSlider(settingsFrame, "Max Distance: " .. self.AutoFish.Settings.MaxDistance .. " studs", 
+        180, 50, self.AutoFish.Settings.MaxDistance, 10, 200, function(value)
+        self.AutoFish:UpdateSettings({MaxDistance = value})
+    end)
+end
+
+function FishingUI:CreateAutoFinderSection()
+    local autoFinderFrame = Instance.new("Frame")
+    autoFinderFrame.Name = "AutoFinderSection"
+    autoFinderFrame.Size = UDim2.new(1, 0, 0, 120)
+    autoFinderFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    autoFinderFrame.BackgroundTransparency = 0.2
+    autoFinderFrame.Parent = self.ScrollingFrame
+    
+    local afCorner = Instance.new("UICorner")
+    afCorner.CornerRadius = UDim.new(0, 6)
+    afCorner.Parent = autoFinderFrame
+    
+    local afTitle = Instance.new("TextLabel")
+    afTitle.Name = "Title"
+    afTitle.Size = UDim2.new(1, -10, 0, 25)
+    afTitle.Position = UDim2.new(0, 5, 0, 5)
+    afTitle.BackgroundTransparency = 1
+    afTitle.Text = "🔍 AUTOFINDER"
+    afTitle.TextColor3 = self.Themes.Dark.Secondary
+    afTitle.Font = Enum.Font.GothamBold
+    afTitle.TextSize = 16
+    afTitle.TextXAlignment = Enum.TextXAlignment.Left
+    afTitle.Parent = autoFinderFrame
+    
+    -- Scan Button
+    self.ScanButton = Instance.new("TextButton")
+    self.ScanButton.Name = "ScanButton"
+    self.ScanButton.Size = UDim2.new(0.45, 0, 0, 30)
+    self.ScanButton.Position = UDim2.new(0.025, 0, 0.3, 0)
+    self.ScanButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    self.ScanButton.Text = "SCAN"
+    self.ScanButton.TextColor3 = Color3.white
+    self.ScanButton.Font = Enum.Font.GothamBold
+    self.ScanButton.TextSize = 13
+    self.ScanButton.Parent = autoFinderFrame
     
     local scanCorner = Instance.new("UICorner")
-    scanCorner.CornerRadius = UDim.new(0, 8)
-    scanCorner.Parent = scanBtn
+    scanCorner.CornerRadius = UDim.new(0, 6)
+    scanCorner.Parent = self.ScanButton
     
-    scanBtn.MouseButton1Click:Connect(function()
-        if AutoFish then
-            AutoFish:ScanRemotes()
-            self:ShowNotification("Scanning for fishing remotes...")
-        end
-    end)
+    -- Results Button
+    self.ResultsButton = Instance.new("TextButton")
+    self.ResultsButton.Name = "ResultsButton"
+    self.ResultsButton.Size = UDim2.new(0.45, 0, 0, 30)
+    self.ResultsButton.Position = UDim2.new(0.525, 0, 0.3, 0)
+    self.ResultsButton.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+    self.ResultsButton.Text = "RESULTS"
+    self.ResultsButton.TextColor3 = Color3.white
+    self.ResultsButton.Font = Enum.Font.GothamBold
+    self.ResultsButton.TextSize = 13
+    self.ResultsButton.Parent = autoFinderFrame
     
-    -- Connect toggle button
-    local isActive = false
-    toggleBtn.MouseButton1Click:Connect(function()
-        if AutoFish then
-            if not isActive then
-                AutoFish:Start()
-                toggleBtn.Text = "STOP AUTO FISHING"
-                toggleBtn.BackgroundColor3 = Colors.Danger
-                statusLabel.Text = "STATUS: ACTIVE"
-                statusLabel.TextColor3 = Colors.Success
-                infoLabel.Text = "Fishing automation is running"
-                isActive = true
-            else
-                AutoFish:Stop()
-                toggleBtn.Text = "START AUTO FISHING"
-                toggleBtn.BackgroundColor3 = Colors.Success
-                statusLabel.Text = "STATUS: STOPPED"
-                statusLabel.TextColor3 = Colors.Danger
-                infoLabel.Text = "Ready to start fishing automation"
-                isActive = false
-            end
-        end
-    end)
+    local resultsCorner = Instance.new("UICorner")
+    resultsCorner.CornerRadius = UDim.new(0, 6)
+    resultsCorner.Parent = self.ResultsButton
     
-    -- Assemble
-    statusLabel.Parent = statusFrame
-    infoLabel.Parent = statusFrame
-    statusFrame.Parent = frame
-    toggleBtn.Parent = frame
-    optionsFrame.Parent = frame
-    scanBtn.Parent = frame
-    
-    self.StatusLabel = statusLabel
-    self.InfoLabel = infoLabel
-    self.ToggleButton = toggleBtn
-    
-    return frame
+    -- AutoFinder Status
+    self.AFStatus = Instance.new("TextLabel")
+    self.AFStatus.Name = "AFStatus"
+    self.AFStatus.Size = UDim2.new(1, -20, 0, 40)
+    self.AFStatus.Position = UDim2.new(0, 10, 0.6, 0)
+    self.AFStatus.BackgroundTransparency = 1
+    self.AFStatus.Text = "AutoFinder: Ready"
+    self.AFStatus.TextColor3 = Color3.fromRGB(200, 255, 200)
+    self.AFStatus.Font = Enum.Font.Gotham
+    self.AFStatus.TextSize = 12
+    self.AFStatus.TextWrapped = true
+    self.AFStatus.TextXAlignment = Enum.TextXAlignment.Left
+    self.AFStatus.Parent = autoFinderFrame
 end
 
-function PiwHubUI:CreateSettingsTab()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundTransparency = 1
-    frame.Visible = false
+function FishingUI:CreateStatsSection()
+    local statsFrame = Instance.new("Frame")
+    statsFrame.Name = "StatsSection"
+    statsFrame.Size = UDim2.new(1, 0, 0, 100)
+    statsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    statsFrame.BackgroundTransparency = 0.2
+    statsFrame.Parent = self.ScrollingFrame
     
-    -- Settings container
-    local container = Instance.new("ScrollingFrame")
-    container.Size = UDim2.new(1, 0, 1, 0)
-    container.BackgroundTransparency = 1
-    container.ScrollBarThickness = 3
-    container.CanvasSize = UDim2.new(0, 0, 0, 500)
+    local statsCorner = Instance.new("UICorner")
+    statsCorner.CornerRadius = UDim.new(0, 6)
+    statsCorner.Parent = statsFrame
     
-    -- Cast delay slider
-    local castSlider = self:CreateSlider("Cast Delay", 0.5, 5, 0.1, 2.0, "s")
-    castSlider.Position = UDim2.new(0, 0, 0, 0)
-    castSlider.Parent = container
+    local statsTitle = Instance.new("TextLabel")
+    statsTitle.Name = "Title"
+    statsTitle.Size = UDim2.new(1, -10, 0, 25)
+    statsTitle.Position = UDim2.new(0, 5, 0, 5)
+    statsTitle.BackgroundTransparency = 1
+    statsTitle.Text = "📈 STATISTICS"
+    statsTitle.TextColor3 = self.Themes.Dark.Secondary
+    statsTitle.Font = Enum.Font.GothamBold
+    statsTitle.TextSize = 16
+    statsTitle.TextXAlignment = Enum.TextXAlignment.Left
+    statsTitle.Parent = statsFrame
     
-    -- Reel delay slider
-    local reelSlider = self:CreateSlider("Reel Delay", 0.1, 2, 0.1, 0.5, "s")
-    reelSlider.Position = UDim2.new(0, 0, 0, 80)
-    reelSlider.Parent = container
+    self.FishCaughtText = Instance.new("TextLabel")
+    self.FishCaughtText.Name = "FishCaught"
+    self.FishCaughtText.Size = UDim2.new(1, -20, 0, 20)
+    self.FishCaughtText.Position = UDim2.new(0, 10, 0.3, 0)
+    self.FishCaughtText.BackgroundTransparency = 1
+    self.FishCaughtText.Text = "🐟 Fish Caught: 0"
+    self.FishCaughtText.TextColor3 = Color3.fromRGB(200, 255, 200)
+    self.FishCaughtText.Font = Enum.Font.Gotham
+    self.FishCaughtText.TextSize = 14
+    self.FishCaughtText.TextXAlignment = Enum.TextXAlignment.Left
+    self.FishCaughtText.Parent = statsFrame
     
-    -- UI Theme dropdown
-    local themeLabel = Instance.new("TextLabel")
-    themeLabel.Text = "UI Theme"
-    themeLabel.Font = Enum.Font.GothamMedium
-    themeLabel.TextSize = 14
-    themeLabel.TextColor3 = Colors.Text
-    themeLabel.BackgroundTransparency = 1
-    themeLabel.Size = UDim2.new(1, 0, 0, 30)
-    themeLabel.Position = UDim2.new(0, 0, 0, 160)
-    themeLabel.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local themeDropdown = Instance.new("Frame")
-    themeDropdown.Size = UDim2.new(1, 0, 0, 40)
-    themeDropdown.Position = UDim2.new(0, 0, 0, 190)
-    themeDropdown.BackgroundColor3 = Colors.Darker
-    themeDropdown.BorderSizePixel = 0
-    
-    local themeCorner = Instance.new("UICorner")
-    themeCorner.CornerRadius = UDim.new(0, 8)
-    themeCorner.Parent = themeDropdown
-    
-    local themeText = Instance.new("TextLabel")
-    themeText.Text = "Dark"
-    themeText.Font = Enum.Font.Gotham
-    themeText.TextSize = 14
-    themeText.TextColor3 = Colors.Text
-    themeText.BackgroundTransparency = 1
-    themeText.Size = UDim2.new(0.8, 0, 1, 0)
-    themeText.Position = UDim2.new(0, 10, 0, 0)
-    themeText.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local themeBtn = Instance.new("TextButton")
-    themeBtn.Text = "▼"
-    themeBtn.Font = Enum.Font.GothamBold
-    themeBtn.TextSize = 14
-    themeBtn.TextColor3 = Colors.Text
-    themeBtn.BackgroundTransparency = 1
-    themeBtn.Size = UDim2.new(0.2, -10, 1, 0)
-    themeBtn.Position = UDim2.new(0.8, 10, 0, 0)
-    themeBtn.AutoButtonColor = false
-    
-    -- Save settings button
-    local saveBtn = Instance.new("TextButton")
-    saveBtn.Text = "SAVE SETTINGS"
-    saveBtn.Font = Enum.Font.GothamBold
-    saveBtn.TextSize = 16
-    saveBtn.TextColor3 = Colors.Text
-    saveBtn.BackgroundColor3 = Colors.Primary
-    saveBtn.Size = UDim2.new(1, 0, 0, 50)
-    saveBtn.Position = UDim2.new(0, 0, 0, 400)
-    saveBtn.AutoButtonColor = false
-    
-    local saveCorner = Instance.new("UICorner")
-    saveCorner.CornerRadius = UDim.new(0, 8)
-    saveCorner.Parent = saveBtn
-    
-    saveBtn.MouseButton1Click:Connect(function()
-        self:ShowNotification("Settings saved!")
-    end)
-    
-    -- Assemble
-    themeLabel.Parent = container
-    themeText.Parent = themeDropdown
-    themeBtn.Parent = themeDropdown
-    themeDropdown.Parent = container
-    saveBtn.Parent = container
-    container.Parent = frame
-    
-    return frame
+    self.AttemptsText = Instance.new("TextLabel")
+    self.AttemptsText.Name = "Attempts"
+    self.AttemptsText.Size = UDim2.new(1, -20, 0, 20)
+    self.AttemptsText.Position = UDim2.new(0, 10, 0.6, 0)
+    self.AttemptsText.BackgroundTransparency = 1
+    self.AttemptsText.Text = "🎣 Total Attempts: 0"
+    self.AttemptsText.TextColor3 = Color3.fromRGB(255, 255, 200)
+    self.AttemptsText.Font = Enum.Font.Gotham
+    self.AttemptsText.TextSize = 14
+    self.AttemptsText.TextXAlignment = Enum.TextXAlignment.Left
+    self.AttemptsText.Parent = statsFrame
 end
 
-function PiwHubUI:CreateDebugTab()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundTransparency = 1
-    frame.Visible = false
+function FishingUI:CreateDebugSection()
+    local debugFrame = Instance.new("Frame")
+    debugFrame.Name = "DebugSection"
+    debugFrame.Size = UDim2.new(1, 0, 0, 80)
+    debugFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    debugFrame.BackgroundTransparency = 0.2
+    debugFrame.Parent = self.ScrollingFrame
     
-    -- Console output
-    local consoleFrame = Instance.new("Frame")
-    consoleFrame.Size = UDim2.new(1, 0, 1, -100)
-    consoleFrame.BackgroundColor3 = Colors.Darker
-    consoleFrame.BorderSizePixel = 0
+    local debugCorner = Instance.new("UICorner")
+    debugCorner.CornerRadius = UDim.new(0, 6)
+    debugCorner.Parent = debugFrame
     
-    local consoleCorner = Instance.new("UICorner")
-    consoleCorner.CornerRadius = UDim.new(0, 8)
-    consoleCorner.Parent = consoleFrame
+    local debugTitle = Instance.new("TextLabel")
+    debugTitle.Name = "Title"
+    debugTitle.Size = UDim2.new(1, -10, 0, 25)
+    debugTitle.Position = UDim2.new(0, 5, 0, 5)
+    debugTitle.BackgroundTransparency = 1
+    debugTitle.Text = "🐛 DEBUG"
+    debugTitle.TextColor3 = self.Themes.Dark.Accent
+    debugTitle.Font = Enum.Font.GothamBold
+    debugTitle.TextSize = 16
+    debugTitle.TextXAlignment = Enum.TextXAlignment.Left
+    debugTitle.Parent = debugFrame
     
-    self.ConsoleOutput = Instance.new("ScrollingFrame")
-    self.ConsoleOutput.Name = "ConsoleOutput"
-    self.ConsoleOutput.Size = UDim2.new(1, -20, 1, -20)
-    self.ConsoleOutput.Position = UDim2.new(0, 10, 0, 10)
-    self.ConsoleOutput.BackgroundTransparency = 1
-    self.ConsoleOutput.ScrollBarThickness = 3
-    self.ConsoleOutput.CanvasSize = UDim2.new(0, 0, 0, 1000)
+    -- Debug Log Button
+    self.DebugButton = Instance.new("TextButton")
+    self.DebugButton.Name = "DebugButton"
+    self.DebugButton.Size = UDim2.new(0.45, 0, 0, 30)
+    self.DebugButton.Position = UDim2.new(0.025, 0, 0.5, 0)
+    self.DebugButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    self.DebugButton.Text = "SHOW LOGS"
+    self.DebugButton.TextColor3 = Color3.white
+    self.DebugButton.Font = Enum.Font.GothamBold
+    self.DebugButton.TextSize = 13
+    self.DebugButton.Parent = debugFrame
     
-    local consoleLabel = Instance.new("TextLabel")
-    consoleLabel.Text = "> AutoFish Debug Console"
-    consoleLabel.Font = Enum.Font.RobotoMono
-    consoleLabel.TextSize = 12
-    consoleLabel.TextColor3 = Colors.TextSecondary
-    consoleLabel.BackgroundTransparency = 1
-    consoleLabel.Size = UDim2.new(1, 0, 0, 20)
-    consoleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    consoleLabel.TextYAlignment = Enum.TextYAlignment.Top
-    consoleLabel.TextWrapped = true
-    consoleLabel.Parent = self.ConsoleOutput
+    local debugCorner = Instance.new("UICorner")
+    debugCorner.CornerRadius = UDim.new(0, 6)
+    debugCorner.Parent = self.DebugButton
     
-    -- Debug buttons
-    local buttonFrame = Instance.new("Frame")
-    buttonFrame.Size = UDim2.new(1, 0, 0, 40)
-    buttonFrame.Position = UDim2.new(0, 0, 1, -90)
-    buttonFrame.BackgroundTransparency = 1
+    -- Reset Stats Button
+    self.ResetButton = Instance.new("TextButton")
+    self.ResetButton.Name = "ResetButton"
+    self.ResetButton.Size = UDim2.new(0.45, 0, 0, 30)
+    self.ResetButton.Position = UDim2.new(0.525, 0, 0.5, 0)
+    self.ResetButton.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+    self.ResetButton.Text = "RESET STATS"
+    self.ResetButton.TextColor3 = Color3.white
+    self.ResetButton.Font = Enum.Font.GothamBold
+    self.ResetButton.TextSize = 13
+    self.ResetButton.Parent = debugFrame
     
-    local testBtn = Instance.new("TextButton")
-    testBtn.Text = "TEST DETECTION"
-    testBtn.Font = Enum.Font.GothamMedium
-    testBtn.TextSize = 14
-    testBtn.TextColor3 = Colors.Text
-    testBtn.BackgroundColor3 = Colors.Warning
-    testBtn.Size = UDim2.new(0.48, 0, 1, 0)
-    testBtn.Position = UDim2.new(0, 0, 0, 0)
-    testBtn.AutoButtonColor = false
-    
-    local testCorner = Instance.new("UICorner")
-    testCorner.CornerRadius = UDim.new(0, 8)
-    testCorner.Parent = testBtn
-    
-    local clearBtn = Instance.new("TextButton")
-    clearBtn.Text = "CLEAR CONSOLE"
-    clearBtn.Font = Enum.Font.GothamMedium
-    clearBtn.TextSize = 14
-    clearBtn.TextColor3 = Colors.Text
-    clearBtn.BackgroundColor3 = Colors.Danger
-    clearBtn.Size = UDim2.new(0.48, 0, 1, 0)
-    clearBtn.Position = UDim2.new(0.52, 0, 0, 0)
-    clearBtn.AutoButtonColor = false
-    
-    local clearCorner = Instance.new("UICorner")
-    clearCorner.CornerRadius = UDim.new(0, 8)
-    clearCorner.Parent = clearBtn
-    
-    testBtn.MouseButton1Click:Connect(function()
-        self:LogToConsole("Running detection test...")
-        self:LogToConsole("Test completed successfully")
-    end)
-    
-    clearBtn.MouseButton1Click:Connect(function()
-        consoleLabel.Text = "> AutoFish Debug Console"
-        self.ConsoleOutput.CanvasPosition = Vector2.new(0, 0)
-    end)
-    
-    -- Assemble
-    self.ConsoleOutput.Parent = consoleFrame
-    consoleFrame.Parent = frame
-    testBtn.Parent = buttonFrame
-    clearBtn.Parent = buttonFrame
-    buttonFrame.Parent = frame
-    
-    return frame
+    local resetCorner = Instance.new("UICorner")
+    resetCorner.CornerRadius = UDim.new(0, 6)
+    resetCorner.Parent = self.ResetButton
 end
 
-function PiwHubUI:CreateStatsTab()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundTransparency = 1
-    frame.Visible = false
+function FishingUI:CreateToggle(parent, label, yPos, initialState, callback)
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.Name = label .. "Toggle"
+    toggleFrame.Size = UDim2.new(1, -20, 0, 25)
+    toggleFrame.Position = UDim2.new(0, 10, 0, yPos)
+    toggleFrame.BackgroundTransparency = 1
+    toggleFrame.Parent = parent
     
-    -- Stats container
-    local statsGrid = Instance.new("Frame")
-    statsGrid.Size = UDim2.new(1, 0, 0, 300)
-    statsGrid.BackgroundTransparency = 1
+    local toggleLabel = Instance.new("TextLabel")
+    toggleLabel.Name = "Label"
+    toggleLabel.Size = UDim2.new(0.7, 0, 1, 0)
+    toggleLabel.BackgroundTransparency = 1
+    toggleLabel.Text = label
+    toggleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+    toggleLabel.Font = Enum.Font.Gotham
+    toggleLabel.TextSize = 14
+    toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    toggleLabel.Parent = toggleFrame
     
-    local stats = {
-        {"Total Fishes", "0", Colors.Text},
-        {"Legendary", "0", Color3.fromRGB(255, 215, 0)},
-        {"Mythical", "0", Color3.fromRGB(255, 100, 100)},
-        {"Divine", "0", Color3.fromRGB(255, 50, 255)},
-        {"Money Earned", "$0", Colors.Success},
-        {"Session Time", "0s", Colors.Primary}
-    }
-    
-    for i, statData in ipairs(stats) do
-        local row = math.floor((i-1)/2)
-        local col = (i-1) % 2
-        
-        local statFrame = Instance.new("Frame")
-        statFrame.Size = UDim2.new(0.48, 0, 0, 80)
-        statFrame.Position = UDim2.new(col * 0.52, 0, row * 100, 0)
-        statFrame.BackgroundColor3 = Colors.Darker
-        statFrame.BorderSizePixel = 0
-        
-        local statCorner = Instance.new("UICorner")
-        statCorner.CornerRadius = UDim.new(0, 8)
-        statCorner.Parent = statFrame
-        
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Text = statData[1]
-        nameLabel.Font = Enum.Font.GothamMedium
-        nameLabel.TextSize = 14
-        nameLabel.TextColor3 = Colors.TextSecondary
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.Size = UDim2.new(1, -20, 0, 30)
-        nameLabel.Position = UDim2.new(0, 10, 0, 10)
-        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        
-        local valueLabel = Instance.new("TextLabel")
-        valueLabel.Text = statData[2]
-        valueLabel.Font = Enum.Font.GothamBold
-        valueLabel.TextSize = 24
-        valueLabel.TextColor3 = statData[3]
-        valueLabel.BackgroundTransparency = 1
-        valueLabel.Size = UDim2.new(1, -20, 0, 40)
-        valueLabel.Position = UDim2.new(0, 10, 0, 30)
-        valueLabel.TextXAlignment = Enum.TextXAlignment.Left
-        
-        nameLabel.Parent = statFrame
-        valueLabel.Parent = statFrame
-        statFrame.Parent = statsGrid
-        
-        self.StatsLabels = self.StatsLabels or {}
-        self.StatsLabels[statData[1]] = valueLabel
-    end
-    
-    -- Refresh button
-    local refreshBtn = Instance.new("TextButton")
-    refreshBtn.Text = "REFRESH STATS"
-    refreshBtn.Font = Enum.Font.GothamBold
-    refreshBtn.TextSize = 16
-    refreshBtn.TextColor3 = Colors.Text
-    refreshBtn.BackgroundColor3 = Colors.Primary
-    refreshBtn.Size = UDim2.new(1, 0, 0, 50)
-    refreshBtn.Position = UDim2.new(0, 0, 0, 350)
-    refreshBtn.AutoButtonColor = false
-    
-    local refreshCorner = Instance.new("UICorner")
-    refreshCorner.CornerRadius = UDim.new(0, 8)
-    refreshCorner.Parent = refreshBtn
-    
-    refreshBtn.MouseButton1Click:Connect(function()
-        self:UpdateStatistics()
-    end)
-    
-    -- Auto-refresh loop
-    task.spawn(function()
-        while self.ScreenGui and self.ScreenGui.Parent do
-            self:UpdateStatistics()
-            task.wait(5)
-        end
-    end)
-    
-    statsGrid.Parent = frame
-    refreshBtn.Parent = frame
-    
-    return frame
-end
-
-function PiwHubUI:CreateToggle(label, defaultValue, callback)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 30)
-    frame.BackgroundTransparency = 1
-    
-    local labelText = Instance.new("TextLabel")
-    labelText.Text = label
-    labelText.Font = Enum.Font.GothamMedium
-    labelText.TextSize = 14
-    labelText.TextColor3 = Colors.Text
-    labelText.BackgroundTransparency = 1
-    labelText.Size = UDim2.new(0.7, 0, 1, 0)
-    labelText.Position = UDim2.new(0, 0, 0, 0)
-    labelText.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local toggle = Instance.new("TextButton")
-    toggle.Text = ""
-    toggle.BackgroundColor3 = defaultValue and Colors.Success or Colors.Danger
-    toggle.Size = UDim2.new(0, 50, 0, 25)
-    toggle.Position = UDim2.new(1, -50, 0.5, -12.5)
-    toggle.AutoButtonColor = false
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Name = "Toggle"
+    toggleButton.Size = UDim2.new(0, 50, 0, 25)
+    toggleButton.Position = UDim2.new(1, -50, 0, 0)
+    toggleButton.BackgroundColor3 = initialState and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(200, 50, 50)
+    toggleButton.Text = initialState and "ON" : "OFF"
+    toggleButton.TextColor3 = Color3.white
+    toggleButton.Font = Enum.Font.GothamBold
+    toggleButton.TextSize = 12
+    toggleButton.Parent = toggleFrame
     
     local toggleCorner = Instance.new("UICorner")
-    toggleCorner.CornerRadius = UDim.new(1, 0)
-    toggleCorner.Parent = toggle
+    toggleCorner.CornerRadius = UDim.new(0, 4)
+    toggleCorner.Parent = toggleButton
     
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 21, 0, 21)
-    knob.Position = UDim2.new(defaultValue and 0.58 or 0.02, 0, 0.5, -10.5)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    knob.BorderSizePixel = 0
-    
-    local knobCorner = Instance.new("UICorner")
-    knobCorner.CornerRadius = UDim.new(1, 0)
-    knobCorner.Parent = knob
-    
-    local isToggled = defaultValue
-    
-    toggle.MouseButton1Click:Connect(function()
-        isToggled = not isToggled
-        toggle.BackgroundColor3 = isToggled and Colors.Success or Colors.Danger
-        
-        local targetPos = isToggled and 0.58 or 0.02
-        TweenService:Create(knob, TweenInfo.new(0.2), {
-            Position = UDim2.new(targetPos, 0, 0.5, -10.5)
-        }):Play()
+    toggleButton.MouseButton1Click:Connect(function()
+        local newState = not initialState
+        initialState = newState
+        toggleButton.BackgroundColor3 = newState and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(200, 50, 50)
+        toggleButton.Text = newState and "ON" : "OFF"
         
         if callback then
-            callback(isToggled)
+            callback(newState)
         end
     end)
     
-    knob.Parent = toggle
-    labelText.Parent = frame
-    toggle.Parent = frame
-    
-    return frame
+    return toggleButton
 end
 
-function PiwHubUI:CreateSlider(label, min, max, step, defaultValue, suffix)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 70)
-    frame.BackgroundTransparency = 1
+function FishingUI:CreateSlider(parent, label, yPos, width, initialValue, minValue, maxValue, callback)
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Name = label .. "Slider"
+    sliderFrame.Size = UDim2.new(1, -20, 0, 40)
+    sliderFrame.Position = UDim2.new(0, 10, 0, yPos)
+    sliderFrame.BackgroundTransparency = 1
+    sliderFrame.Parent = parent
     
-    local labelText = Instance.new("TextLabel")
-    labelText.Text = label
-    labelText.Font = Enum.Font.GothamMedium
-    labelText.TextSize = 14
-    labelText.TextColor3 = Colors.Text
-    labelText.BackgroundTransparency = 1
-    labelText.Size = UDim2.new(1, 0, 0, 20)
-    labelText.Position = UDim2.new(0, 0, 0, 0)
-    labelText.TextXAlignment = Enum.TextXAlignment.Left
+    local sliderLabel = Instance.new("TextLabel")
+    sliderLabel.Name = "Label"
+    sliderLabel.Size = UDim2.new(1, 0, 0, 20)
+    sliderLabel.BackgroundTransparency = 1
+    sliderLabel.Text = label
+    sliderLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+    sliderLabel.Font = Enum.Font.Gotham
+    sliderLabel.TextSize = 14
+    sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+    sliderLabel.Parent = sliderFrame
     
-    local sliderTrack = Instance.new("Frame")
-    sliderTrack.Size = UDim2.new(1, 0, 0, 6)
-    sliderTrack.Position = UDim2.new(0, 0, 0, 30)
-    sliderTrack.BackgroundColor3 = Colors.Darker
-    sliderTrack.BorderSizePixel = 0
+    local sliderBackground = Instance.new("Frame")
+    sliderBackground.Name = "Background"
+    sliderBackground.Size = UDim2.new(1, 0, 0, 10)
+    sliderBackground.Position = UDim2.new(0, 0, 1, -15)
+    sliderBackground.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    sliderBackground.BorderSizePixel = 0
+    sliderBackground.Parent = sliderFrame
     
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(1, 0)
-    trackCorner.Parent = sliderTrack
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(1, 0)
+    bgCorner.Parent = sliderBackground
     
     local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new((defaultValue - min) / (max - min), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Colors.Primary
+    sliderFill.Name = "Fill"
+    sliderFill.Size = UDim2.new((initialValue - minValue) / (maxValue - minValue), 0, 1, 0)
+    sliderFill.BackgroundColor3 = self.Themes.Dark.Secondary
     sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderBackground
     
     local fillCorner = Instance.new("UICorner")
     fillCorner.CornerRadius = UDim.new(1, 0)
     fillCorner.Parent = sliderFill
     
-    local sliderKnob = Instance.new("TextButton")
-    sliderKnob.Text = ""
-    sliderKnob.Size = UDim2.new(0, 20, 0, 20)
-    sliderKnob.Position = UDim2.new((defaultValue - min) / (max - min), -10, 0, -7)
-    sliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    sliderKnob.BorderSizePixel = 0
-    sliderKnob.AutoButtonColor = false
+    local sliderButton = Instance.new("TextButton")
+    sliderButton.Name = "SliderButton"
+    sliderButton.Size = UDim2.new(0, 20, 0, 20)
+    sliderButton.Position = UDim2.new((initialValue - minValue) / (maxValue - minValue), -10, 0.5, -10)
+    sliderButton.BackgroundColor3 = Color3.white
+    sliderButton.Text = ""
+    sliderButton.Parent = sliderBackground
     
-    local knobCorner = Instance.new("UICorner")
-    knobCorner.CornerRadius = UDim.new(1, 0)
-    knobCorner.Parent = sliderKnob
-    
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Text = defaultValue .. (suffix or "")
-    valueLabel.Font = Enum.Font.Gotham
-    valueLabel.TextSize = 12
-    valueLabel.TextColor3 = Colors.TextSecondary
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Size = UDim2.new(1, 0, 0, 20)
-    valueLabel.Position = UDim2.new(0, 0, 0, 45)
-    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(1, 0)
+    buttonCorner.Parent = sliderButton
     
     -- Dragging logic
-    local isDragging = false
-    
-    local function updateValue(xPos)
-        local relative = math.clamp((xPos - sliderTrack.AbsolutePosition.X) / sliderTrack.AbsoluteSize.X, 0, 1)
-        local value = min + (max - min) * relative
-        value = math.floor(value / step + 0.5) * step
-        
-        sliderFill.Size = UDim2.new(relative, 0, 1, 0)
-        sliderKnob.Position = UDim2.new(relative, -10, 0, -7)
-        valueLabel.Text = string.format("%.1f", value) .. (suffix or "")
-        
-        if AutoFish then
-            if label == "Cast Delay" then
-                AutoFish:ToggleSetting("CastDelay", value)
-            elseif label == "Reel Delay" then
-                AutoFish:ToggleSetting("ReelDelay", value)
-            end
-        end
-    end
-    
-    sliderKnob.MouseButton1Down:Connect(function()
-        isDragging = true
-    end)
-    
-    game:GetService("UserInputService").InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            isDragging = false
-        end
-    end)
-    
-    game:GetService("RunService").RenderStepped:Connect(function()
-        if isDragging then
-            local mouse = game:GetService("UserInputService"):GetMouseLocation()
-            updateValue(mouse.X)
-        end
-    end)
-    
-    sliderFill.Parent = sliderTrack
-    sliderKnob.Parent = sliderTrack
-    sliderTrack.Parent = frame
-    labelText.Parent = frame
-    valueLabel.Parent = frame
-    
-    return frame
-end
-
-function PiwHubUI:SwitchTab(tabName)
-    if self.CurrentTab then
-        self.TabContents[self.CurrentTab].Visible = false
-        self.TabButtons[self.CurrentTab].TextColor3 = Colors.TextSecondary
-        TweenService:Create(self.TabButtons[self.CurrentTab], TweenInfo.new(0.2), {
-            BackgroundColor3 = Colors.Darker
-        }):Play()
-    end
-    
-    self.CurrentTab = tabName
-    self.TabContents[tabName].Visible = true
-    self.TabButtons[tabName].TextColor3 = Colors.Primary
-    TweenService:Create(self.TabButtons[tabName], TweenInfo.new(0.2), {
-        BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    }):Play()
-    
-    if tabName == "Statistics" then
-        self:UpdateStatistics()
-    end
-end
-
-function PiwHubUI:LogToConsole(message)
-    if self.ConsoleOutput then
-        local label = self.ConsoleOutput:FindFirstChildOfClass("TextLabel")
-        if label then
-            label.Text = label.Text .. "\n> " .. message
-            task.wait()
-            self.ConsoleOutput.CanvasPosition = Vector2.new(0, self.ConsoleOutput.CanvasSize.Y.Offset)
-        end
-    end
-end
-
-function PiwHubUI:UpdateStatistics()
-    if not self.StatsLabels then return end
-    
-    if AutoFish then
-        local stats = AutoFish:GetStats()
-        
-        if self.StatsLabels["Total Fishes"] then
-            self.StatsLabels["Total Fishes"].Text = tostring(stats.Total or 0)
-        end
-        if self.StatsLabels["Legendary"] then
-            self.StatsLabels["Legendary"].Text = tostring(stats.Legendary or 0)
-        end
-        if self.StatsLabels["Mythical"] then
-            self.StatsLabels["Mythical"].Text = tostring(stats.Mythical or 0)
-        end
-        if self.StatsLabels["Divine"] then
-            self.StatsLabels["Divine"].Text = tostring(stats.Divine or 0)
-        end
-        if self.StatsLabels["Money Earned"] then
-            self.StatsLabels["Money Earned"].Text = "$" .. tostring(stats.Money or 0)
-        end
-        if self.StatsLabels["Session Time"] then
-            local time = stats.SessionTime or 0
-            if time > 3600 then
-                self.StatsLabels["Session Time"].Text = string.format("%.1fh", time/3600)
-            elseif time > 60 then
-                self.StatsLabels["Session Time"].Text = string.format("%.0fm", time/60)
-            else
-                self.StatsLabels["Session Time"].Text = string.format("%.0fs", time)
-            end
-        end
-    end
-end
-
-function PiwHubUI:ShowNotification(message)
-    local notif = Instance.new("Frame")
-    notif.Size = UDim2.new(0, 300, 0, 60)
-    notif.Position = UDim2.new(1, -320, 1, -80)
-    notif.BackgroundColor3 = Colors.Dark
-    notif.BackgroundTransparency = 0.1
-    notif.BorderSizePixel = 0
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = notif
-    
-    local shadow = Instance.new("ImageLabel")
-    shadow.Name = "DropShadow"
-    shadow.Parent = notif
-    shadow.AnchorPoint = Vector2.new(0.5, 0.5)
-    shadow.BackgroundTransparency = 1
-    shadow.Position = UDim2.new(0.5, 0, 0.5, 4)
-    shadow.Size = UDim2.new(1, 44, 1, 44)
-    shadow.Image = "rbxassetid://6014261993"
-    shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-    shadow.ImageTransparency = 0.5
-    shadow.ScaleType = Enum.ScaleType.Slice
-    shadow.SliceCenter = Rect.new(49, 49, 450, 450)
-    shadow.ZIndex = -1
-    
-    local label = Instance.new("TextLabel")
-    label.Text = message
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 14
-    label.TextColor3 = Colors.Text
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -20, 1, -20)
-    label.Position = UDim2.new(0, 10, 0, 10)
-    label.TextWrapped = true
-    
-    label.Parent = notif
-    notif.Parent = self.ScreenGui
-    
-    -- Animate in
-    notif.Position = UDim2.new(1, 20, 1, -80)
-    local tweenIn = TweenService:Create(notif, TweenInfo.new(0.3), {
-        Position = UDim2.new(1, -320, 1, -80)
-    })
-    tweenIn:Play()
-    
-    -- Auto remove
-    task.delay(3, function()
-        if notif and notif.Parent then
-            local tweenOut = TweenService:Create(notif, TweenInfo.new(0.3), {
-                Position = UDim2.new(1, 20, 1, -80)
-            })
-            tweenOut:Play()
-            tweenOut.Completed:Connect(function()
-                notif:Destroy()
-            end)
-        end
-    end)
-end
-
-function PiwHubUI:MakeDraggable(dragFrame, mainFrame)
     local dragging = false
-    local dragInput, mousePos, framePos
     
-    dragFrame.InputBegan:Connect(function(input)
+    sliderButton.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    RunService.Heartbeat:Connect(function()
+        if dragging then
+            local mousePos = UserInputService:GetMouseLocation()
+            local framePos = sliderBackground.AbsolutePosition
+            local frameSize = sliderBackground.AbsoluteSize
+            
+            local relativeX = math.clamp((mousePos.X - framePos.X) / frameSize.X, 0, 1)
+            local value = math.floor(minValue + relativeX * (maxValue - minValue))
+            
+            sliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+            sliderButton.Position = UDim2.new(relativeX, -10, 0.5, -10)
+            sliderLabel.Text = label:gsub("%d+ studs", value .. " studs")
+            
+            if callback then
+                callback(value)
+            end
+        end
+    end)
+    
+    return sliderButton
+end
+
+function FishingUI:SetupEventHandlers()
+    -- Dragging functionality
+    local dragging = false
+    local dragStart, frameStart
+    
+    self.TitleBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
-            mousePos = input.Position
-            framePos = mainFrame.Position
-            
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-    
-    dragFrame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            dragInput = input
+            dragStart = input.Position
+            frameStart = self.MainContainer.Position
         end
     end)
     
     UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - mousePos
-            mainFrame.Position = UDim2.new(
-                framePos.X.Scale, framePos.X.Offset + delta.X,
-                framePos.Y.Scale, framePos.Y.Offset + delta.Y
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            self.MainContainer.Position = UDim2.new(
+                frameStart.X.Scale,
+                frameStart.X.Offset + delta.X,
+                frameStart.Y.Scale,
+                frameStart.Y.Offset + delta.Y
             )
         end
     end)
-end
-
-function PiwHubUI:SetupKeybinds()
-    UserInputService.InputBegan:Connect(function(input, processed)
-        if not processed then
-            if input.KeyCode == Enum.KeyCode.RightControl then
-                self:ToggleVisibility()
-            elseif input.KeyCode == Enum.KeyCode.Insert then
-                self:ToggleVisibility()
-            end
-        end
-    end)
-end
-
-function PiwHubUI:ToggleVisibility()
-    self.IsVisible = not self.IsVisible
-    self.MainFrame.Visible = self.IsVisible
-end
-
-function PiwHubUI:ToggleMinimize()
-    self.Minimized = not self.Minimized
-    if self.Minimized then
-        self.MainFrame.Size = UDim2.new(0, 500, 0, 50)
-        self.ContentFrame.Visible = false
-        self.Tabs.Visible = false
-    else
-        self.MainFrame.Size = UDim2.new(0, 500, 0, 600)
-        self.ContentFrame.Visible = true
-        self.Tabs.Visible = true
-    end
-end
-
-function PiwHubUI:Close()
-    local tweenOut = TweenService:Create(self.MainFrame, TweenInfo.new(0.3), {
-        Position = UDim2.new(0.5, -250, 0.4, -300),
-        BackgroundTransparency = 1
-    })
-    tweenOut:Play()
-    tweenOut.Completed:Connect(function()
-        if self.ScreenGui then
-            self.ScreenGui:Destroy()
-        end
-    end)
-end
-
--- Initialize UI
-local UI = PiwHubUI.new()
-UI:CreateWindow()
-
--- Load modules
-UI:LogToConsole("PiwHub AutoFish UI Loaded")
-UI:LogToConsole("Version 3.0 - BLATANT Edition")
-UI:LogToConsole("Game: " .. game.PlaceId)
-
--- Update stats every 5 seconds
-task.spawn(function()
-    while task.wait(5) do
-        UI:UpdateStatistics()
-    end
-end)
-
-return UI-- PiwHub Fishing UI - Modern Interface
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-
-local PiwHubUI = {}
-PiwHubUI.__index = PiwHubUI
-
--- Color palette
-local Colors = {
-    Primary = Color3.fromRGB(88, 101, 242),
-    Secondary = Color3.fromRGB(255, 115, 105),
-    Success = Color3.fromRGB(87, 242, 135),
-    Warning = Color3.fromRGB(242, 201, 76),
-    Danger = Color3.fromRGB(242, 76, 76),
-    Dark = Color3.fromRGB(25, 25, 35),
-    Darker = Color3.fromRGB(15, 15, 25),
-    Light = Color3.fromRGB(240, 240, 245),
-    Text = Color3.fromRGB(230, 230, 240),
-    TextSecondary = Color3.fromRGB(180, 180, 200)
-}
-
--- Load AutoFish module
-local AutoFish
-local function LoadAutoFish()
-    local success, result = pcall(function()
-        return require(script.Parent.Parent.Features.Fishing.AutoFish)
-    end)
-    if success then
-        return result
-    end
-    -- Fallback to direct load
-    return loadstring(game:HttpGet("https://raw.githubusercontent.com/PiwHub/Modules/main/AutoFish.lua"))()
-end
-
-function PiwHubUI.new()
-    local self = setmetatable({}, PiwHubUI)
     
-    self.Elements = {}
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    -- Button events
+    self.CloseButton.MouseButton1Click:Connect(function()
+        self:ToggleUI()
+    end)
+    
+    self.MinimizeButton.MouseButton1Click:Connect(function()
+        self.Content.Visible = not self.Content.Visible
+        if self.Content.Visible then
+            self.MainContainer.Size = UDim2.new(0, 350, 0, 500)
+            self.MinimizeButton.Text = "─"
+        else
+            self.MainContainer.Size = UDim2.new(0, 350, 0, 40)
+            self.MinimizeButton.Text = "□"
+        end
+    end)
+    
+    self.StartButton.MouseButton1Click:Connect(function()
+        if self.AutoFish:Start() then
+            self:UpdateStatus("Running", Color3.fromRGB(0, 255, 100))
+        end
+    end)
+    
+    self.StopButton.MouseButton1Click:Connect(function()
+        if self.AutoFish:Stop() then
+            self:UpdateStatus("Stopped", Color3.fromRGB(255, 100, 100))
+        end
+    end)
+    
+    self.ScanButton.MouseButton1Click:Connect(function()
+        if self.AutoFish.AutoFinder then
+            self.AutoFish:StartAutoFinderScan()
+            self.AFStatus.Text = "AutoFinder: Scanning..."
+        end
+    end)
+    
+    self.ResultsButton.MouseButton1Click:Connect(function()
+        if self.AutoFish.AutoFinder then
+            local results = self.AutoFish.AutoFinder:GetResultsSummary()
+            self.AFStatus.Text = string.format(
+                "Results: %d objects\n%d Fishing Poles",
+                results.CurrentCount,
+                results.ByType.FishingPole or 0
+            )
+        end
+    end)
+    
+    self.DebugButton.MouseButton1Click:Connect(function()
+        self.Logger:ToggleUI(not self.Logger.LogContainer.Visible)
+    end)
+    
+    self.ResetButton.MouseButton1Click:Connect(function()
+        self.AutoFish:ResetStats()
+        self:UpdateStats()
+    end)
+    
+    -- Auto update stats
+    self.UpdateConnection = RunService.Heartbeat:Connect(function()
+        if self.AutoFish.IsRunning then
+            self:UpdateUI()
+        end
+    end)
+end
+
+function FishingUI:UpdateUI()
+    self:UpdateStatus()
+    self:UpdateStats()
+    self:UpdateTargetInfo()
+end
+
+function FishingUI:UpdateStatus(status, color)
+    if status then
+        self.StatusText.Text = status == "Running" and "✅ Running" : "❌ Stopped"
+        self.StatusIndicator.BackgroundColor3 = color or 
+            (status == "Running" and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 50, 50))
+    else
+        self.StatusText.Text = self.AutoFish.IsRunning and "✅ Running" : "❌ Stopped"
+        self.StatusIndicator.BackgroundColor3 = self.AutoFish.IsRunning and 
+            Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 50, 50)
+    end
+end
+
+function FishingUI:UpdateStats()
+    local stats = self.AutoFish:GetStats()
+    self.FishCaughtText.Text = string.format("🐟 Fish Caught: %d", stats.FishCaught)
+    self.AttemptsText.Text = string.format("🎣 Total Attempts: %d", stats.TotalAttempts)
+end
+
+function FishingUI:UpdateTargetInfo()
+    if self.AutoFish.CurrentTarget then
+        self.TargetText.Text = string.format(
+            "🎯 Target: %s (%.1f studs)",
+            self.AutoFish.CurrentTarget.Object.Name,
+            self.AutoFish.CurrentTarget.Distance or 0
+        )
+    else
+        self.TargetText.Text = "🎯 Target: None"
+    end
+end
+
+function FishingUI:ToggleUI()
+    self.IsVisible = not self.IsVisible
+    self.ScreenGui.Enabled = self.IsVisible
+    self.Logger:Info(self.ServiceName, "UI " .. (self.IsVisible and "shown" : "hidden"))
+end
+
+function FishingUI:Show()
     self.IsVisible = true
-    self.Minimized = false
-    
-    -- Try to load AutoFish
-    AutoFish = LoadAutoFish()
-    
-    return self
+    self.ScreenGui.Enabled = true
 end
 
-function PiwHubUI:CreateWindow()
-    -- Create main screen gui
-    self.ScreenGui = Instance.new("ScreenGui")
-    self.ScreenGui.Name = "PiwHubFishingUI"
-    self.ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    self.ScreenGui.DisplayOrder = 999
-    self.ScreenGui.Parent = game:GetService("CoreGui")
-    
-    -- Main container
-    self.MainFrame = Instance.new("Frame")
-    self.MainFrame.Size = UDim2.new(0, 500, 0, 600)
-    self.MainFrame.Position = UDim2.new(0.5, -250, 0.5, -300)
-    self.MainFrame.BackgroundColor3 = Colors.Dark
-    self.MainFrame.BackgroundTransparency = 0.05
-    self.MainFrame.BorderSizePixel = 0
-    
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, 12)
-    UICorner.Parent = self.MainFrame
-    
-    -- Drop shadow
-    local DropShadow = Instance.new("ImageLabel")
-    DropShadow.Name = "DropShadow"
-    DropShadow.Parent = self.MainFrame
-    DropShadow.AnchorPoint = Vector2.new(0.5, 0.5)
-    DropShadow.BackgroundTransparency = 1
-    DropShadow.Position = UDim2.new(0.5, 0, 0.5, 4)
-    DropShadow.Size = UDim2.new(1, 44, 1, 44)
-    DropShadow.Image = "rbxassetid://6014261993"
-    DropShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-    DropShadow.ImageTransparency = 0.5
-    DropShadow.ScaleType = Enum.ScaleType.Slice
-    DropShadow.SliceCenter = Rect.new(49, 49, 450, 450)
-    DropShadow.ZIndex = -1
-    
-    -- Title bar
-    self.TitleBar = self:CreateTitleBar()
-    
-    -- Tab buttons
-    self.Tabs = self:CreateTabs()
-    
-    -- Content area
-    self.ContentFrame = Instance.new("Frame")
-    self.ContentFrame.Size = UDim2.new(1, -40, 1, -120)
-    self.ContentFrame.Position = UDim2.new(0, 20, 0, 100)
-    self.ContentFrame.BackgroundTransparency = 1
-    
-    -- Create tab contents
-    self.TabContents = {
-        Main = self:CreateMainTab(),
-        Settings = self:CreateSettingsTab(),
-        Debug = self:CreateDebugTab(),
-        Statistics = self:CreateStatsTab()
-    }
-    
-    -- Show default tab
-    self:SwitchTab("Main")
-    
-    -- Assemble UI
-    self.TitleBar.Parent = self.MainFrame
-    self.Tabs.Parent = self.MainFrame
-    self.ContentFrame.Parent = self.MainFrame
-    
-    self.MainFrame.Parent = self.ScreenGui
-    
-    -- Initialize with animation
-    self.MainFrame.Position = UDim2.new(0.5, -250, 0.4, -300)
-    self.MainFrame.BackgroundTransparency = 1
-    
-    local tweenIn = TweenService:Create(self.MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {
-        Position = UDim2.new(0.5, -250, 0.5, -300),
-        BackgroundTransparency = 0.05
-    })
-    tweenIn:Play()
-    
-    -- Setup keybinds
-    self:SetupKeybinds()
-    
-    return self
+function FishingUI:Hide()
+    self.IsVisible = false
+    self.ScreenGui.Enabled = false
 end
 
-function PiwHubUI:CreateTitleBar()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 50)
-    frame.BackgroundTransparency = 1
-    
-    -- Logo/Title
-    local title = Instance.new("TextLabel")
-    title.Text = "PiwHub  •  AutoFish"
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 18
-    title.TextColor3 = Colors.Primary
-    title.BackgroundTransparency = 1
-    title.Size = UDim2.new(0, 200, 1, 0)
-    title.Position = UDim2.new(0, 20, 0, 0)
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    
-    -- Close button
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Text = "×"
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.TextSize = 24
-    closeBtn.TextColor3 = Colors.Text
-    closeBtn.BackgroundColor3 = Colors.Darker
-    closeBtn.Size = UDim2.new(0, 30, 0, 30)
-    closeBtn.Position = UDim2.new(1, -40, 0.5, -15)
-    
-    local closeCorner = Instance.new("UICorner")
-    closeCorner.CornerRadius = UDim.new(0, 6)
-    closeCorner.Parent = closeBtn
-    
-    closeBtn.MouseButton1Click:Connect(function()
-        self:Close()
-    end)
-    
-    -- Minimize button
-    local minBtn = Instance.new("TextButton")
-    minBtn.Text = "−"
-    minBtn.Font = Enum.Font.GothamBold
-    minBtn.TextSize = 24
-    minBtn.TextColor3 = Colors.Text
-    minBtn.BackgroundColor3 = Colors.Darker
-    minBtn.Size = UDim2.new(0, 30, 0, 30)
-    minBtn.Position = UDim2.new(1, -80, 0.5, -15)
-    
-    local minCorner = Instance.new("UICorner")
-    minCorner.CornerRadius = UDim.new(0, 6)
-    minCorner.Parent = minBtn
-    
-    minBtn.MouseButton1Click:Connect(function()
-        self:ToggleMinimize()
-    end)
-    
-    title.Parent = frame
-    closeBtn.Parent = frame
-    minBtn.Parent = frame
-    
-    -- Make draggable
-    self:MakeDraggable(frame, self.MainFrame)
-    
-    return frame
-end
-
-function PiwHubUI:CreateTabs()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -40, 0, 40)
-    frame.Position = UDim2.new(0, 20, 0, 60)
-    frame.BackgroundTransparency = 1
-    
-    local tabs = {"Main", "Settings", "Debug", "Statistics"}
-    local buttons = {}
-    
-    for i, tabName in ipairs(tabs) do
-        local btn = Instance.new("TextButton")
-        btn.Text = tabName
-        btn.Font = Enum.Font.GothamMedium
-        btn.TextSize = 14
-        btn.TextColor3 = Colors.TextSecondary
-        btn.BackgroundColor3 = Colors.Darker
-        btn.Size = UDim2.new(0.22, -5, 1, 0)
-        btn.Position = UDim2.new((i-1) * 0.25, 0, 0, 0)
-        btn.AutoButtonColor = false
-        
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 8)
-        corner.Parent = btn
-        
-        btn.MouseEnter:Connect(function()
-            if self.CurrentTab ~= tabName then
-                TweenService:Create(btn, TweenInfo.new(0.2), {
-                    BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-                }):Play()
-            end
-        end)
-        
-        btn.MouseLeave:Connect(function()
-            if self.CurrentTab ~= tabName then
-                TweenService:Create(btn, TweenInfo.new(0.2), {
-                    BackgroundColor3 = Colors.Darker
-                }):Play()
-            end
-        end)
-        
-        btn.MouseButton1Click:Connect(function()
-            self:SwitchTab(tabName)
-        end)
-        
-        buttons[tabName] = btn
-        btn.Parent = frame
+function FishingUI:Destroy()
+    if self.UpdateConnection then
+        self.UpdateConnection:Disconnect()
     end
     
-    self.TabButtons = buttons
-    return frame
-end
-
-function PiwHubUI:CreateMainTab()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundTransparency = 1
-    frame.Visible = false
-    
-    -- Status indicator
-    local statusFrame = Instance.new("Frame")
-    statusFrame.Size = UDim2.new(1, 0, 0, 80)
-    statusFrame.BackgroundColor3 = Colors.Darker
-    statusFrame.BorderSizePixel = 0
-    
-    local statusCorner = Instance.new("UICorner")
-    statusCorner.CornerRadius = UDim.new(0, 8)
-    statusCorner.Parent = statusFrame
-    
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Text = "STATUS: STOPPED"
-    statusLabel.Font = Enum.Font.GothamBold
-    statusLabel.TextSize = 16
-    statusLabel.TextColor3 = Colors.Danger
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Size = UDim2.new(1, -20, 0.5, 0)
-    statusLabel.Position = UDim2.new(0, 10, 0, 10)
-    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Text = "Ready to start fishing automation"
-    infoLabel.Font = Enum.Font.Gotham
-    infoLabel.TextSize = 12
-    infoLabel.TextColor3 = Colors.TextSecondary
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Size = UDim2.new(1, -20, 0.5, 0)
-    infoLabel.Position = UDim2.new(0, 10, 0.5, 0)
-    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
-    
-    -- Main toggle button
-    local toggleBtn = Instance.new("TextButton")
-    toggleBtn.Text = "START AUTO FISHING"
-    toggleBtn.Font = Enum.Font.GothamBold
-    toggleBtn.TextSize = 16
-    toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    toggleBtn.BackgroundColor3 = Colors.Success
-    toggleBtn.Size = UDim2.new(1, 0, 0, 50)
-    toggleBtn.Position = UDim2.new(0, 0, 0, 100)
-    toggleBtn.AutoButtonColor = false
-    
-    local toggleCorner = Instance.new("UICorner")
-    toggleCorner.CornerRadius = UDim.new(0, 8)
-    toggleCorner.Parent = toggleBtn
-    
-    -- Options frame
-    local optionsFrame = Instance.new("Frame")
-    optionsFrame.Size = UDim2.new(1, 0, 0, 200)
-    optionsFrame.Position = UDim2.new(0, 0, 0, 170)
-    optionsFrame.BackgroundTransparency = 1
-    
-    -- Auto Cast toggle
-    local castToggle = self:CreateToggle("Auto Cast", true, function(value)
-        if AutoFish then
-            AutoFish:ToggleSetting("AutoCast", value)
-        end
-    end)
-    castToggle.Position = UDim2.new(0, 0, 0, 0)
-    castToggle.Parent = optionsFrame
-    
-    -- Auto Reel toggle
-    local reelToggle = self:CreateToggle("Auto Reel", true, function(value)
-        if AutoFish then
-            AutoFish:ToggleSetting("AutoReel", value)
-        end
-    end)
-    reelToggle.Position = UDim2.new(0, 0, 0, 40)
-    reelToggle.Parent = optionsFrame
-    
-    -- Auto Sell toggle
-    local sellToggle = self:CreateToggle("Auto Sell", false, function(value)
-        if AutoFish then
-            AutoFish:ToggleSetting("AutoSell", value)
-        end
-    end)
-    sellToggle.Position = UDim2.new(0, 0, 0, 80)
-    sellToggle.Parent = optionsFrame
-    
-    -- Bypass AC toggle
-    local bypassToggle = self:CreateToggle("Bypass Anti-Cheat", true, function(value)
-        if AutoFish then
-            AutoFish:ToggleSetting("BypassAC", value)
-        end
-    end)
-    bypassToggle.Position = UDim2.new(0, 0, 0, 120)
-    bypassToggle.Parent = optionsFrame
-    
-    -- Scan button
-    local scanBtn = Instance.new("TextButton")
-    scanBtn.Text = "SCAN FOR REMOTES"
-    scanBtn.Font = Enum.Font.GothamMedium
-    scanBtn.TextSize = 14
-    scanBtn.TextColor3 = Colors.Text
-    scanBtn.BackgroundColor3 = Colors.Primary
-    scanBtn.Size = UDim2.new(1, 0, 0, 40)
-    scanBtn.Position = UDim2.new(0, 0, 0, 380)
-    scanBtn.AutoButtonColor = false
-    
-    local scanCorner = Instance.new("UICorner")
-    scanCorner.CornerRadius = UDim.new(0, 8)
-    scanCorner.Parent = scanBtn
-    
-    scanBtn.MouseButton1Click:Connect(function()
-        if AutoFish then
-            AutoFish:ScanRemotes()
-            self:ShowNotification("Scanning for fishing remotes...")
-        end
-    end)
-    
-    -- Connect toggle button
-    local isActive = false
-    toggleBtn.MouseButton1Click:Connect(function()
-        if AutoFish then
-            if not isActive then
-                AutoFish:Start()
-                toggleBtn.Text = "STOP AUTO FISHING"
-                toggleBtn.BackgroundColor3 = Colors.Danger
-                statusLabel.Text = "STATUS: ACTIVE"
-                statusLabel.TextColor3 = Colors.Success
-                infoLabel.Text = "Fishing automation is running"
-                isActive = true
-            else
-                AutoFish:Stop()
-                toggleBtn.Text = "START AUTO FISHING"
-                toggleBtn.BackgroundColor3 = Colors.Success
-                statusLabel.Text = "STATUS: STOPPED"
-                statusLabel.TextColor3 = Colors.Danger
-                infoLabel.Text = "Ready to start fishing automation"
-                isActive = false
-            end
-        end
-    end)
-    
-    -- Assemble
-    statusLabel.Parent = statusFrame
-    infoLabel.Parent = statusFrame
-    statusFrame.Parent = frame
-    toggleBtn.Parent = frame
-    optionsFrame.Parent = frame
-    scanBtn.Parent = frame
-    
-    self.StatusLabel = statusLabel
-    self.InfoLabel = infoLabel
-    self.ToggleButton = toggleBtn
-    
-    return frame
-end
-
-function PiwHubUI:CreateSettingsTab()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundTransparency = 1
-    frame.Visible = false
-    
-    -- Settings container
-    local container = Instance.new("ScrollingFrame")
-    container.Size = UDim2.new(1, 0, 1, 0)
-    container.BackgroundTransparency = 1
-    container.ScrollBarThickness = 3
-    container.CanvasSize = UDim2.new(0, 0, 0, 500)
-    
-    -- Cast delay slider
-    local castSlider = self:CreateSlider("Cast Delay", 0.5, 5, 0.1, 2.0, "s")
-    castSlider.Position = UDim2.new(0, 0, 0, 0)
-    castSlider.Parent = container
-    
-    -- Reel delay slider
-    local reelSlider = self:CreateSlider("Reel Delay", 0.1, 2, 0.1, 0.5, "s")
-    reelSlider.Position = UDim2.new(0, 0, 0, 80)
-    reelSlider.Parent = container
-    
-    -- UI Theme dropdown
-    local themeLabel = Instance.new("TextLabel")
-    themeLabel.Text = "UI Theme"
-    themeLabel.Font = Enum.Font.GothamMedium
-    themeLabel.TextSize = 14
-    themeLabel.TextColor3 = Colors.Text
-    themeLabel.BackgroundTransparency = 1
-    themeLabel.Size = UDim2.new(1, 0, 0, 30)
-    themeLabel.Position = UDim2.new(0, 0, 0, 160)
-    themeLabel.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local themeDropdown = Instance.new("Frame")
-    themeDropdown.Size = UDim2.new(1, 0, 0, 40)
-    themeDropdown.Position = UDim2.new(0, 0, 0, 190)
-    themeDropdown.BackgroundColor3 = Colors.Darker
-    themeDropdown.BorderSizePixel = 0
-    
-    local themeCorner = Instance.new("UICorner")
-    themeCorner.CornerRadius = UDim.new(0, 8)
-    themeCorner.Parent = themeDropdown
-    
-    local themeText = Instance.new("TextLabel")
-    themeText.Text = "Dark"
-    themeText.Font = Enum.Font.Gotham
-    themeText.TextSize = 14
-    themeText.TextColor3 = Colors.Text
-    themeText.BackgroundTransparency = 1
-    themeText.Size = UDim2.new(0.8, 0, 1, 0)
-    themeText.Position = UDim2.new(0, 10, 0, 0)
-    themeText.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local themeBtn = Instance.new("TextButton")
-    themeBtn.Text = "▼"
-    themeBtn.Font = Enum.Font.GothamBold
-    themeBtn.TextSize = 14
-    themeBtn.TextColor3 = Colors.Text
-    themeBtn.BackgroundTransparency = 1
-    themeBtn.Size = UDim2.new(0.2, -10, 1, 0)
-    themeBtn.Position = UDim2.new(0.8, 10, 0, 0)
-    themeBtn.AutoButtonColor = false
-    
-    -- Save settings button
-    local saveBtn = Instance.new("TextButton")
-    saveBtn.Text = "SAVE SETTINGS"
-    saveBtn.Font = Enum.Font.GothamBold
-    saveBtn.TextSize = 16
-    saveBtn.TextColor3 = Colors.Text
-    saveBtn.BackgroundColor3 = Colors.Primary
-    saveBtn.Size = UDim2.new(1, 0, 0, 50)
-    saveBtn.Position = UDim2.new(0, 0, 0, 400)
-    saveBtn.AutoButtonColor = false
-    
-    local saveCorner = Instance.new("UICorner")
-    saveCorner.CornerRadius = UDim.new(0, 8)
-    saveCorner.Parent = saveBtn
-    
-    saveBtn.MouseButton1Click:Connect(function()
-        self:ShowNotification("Settings saved!")
-    end)
-    
-    -- Assemble
-    themeLabel.Parent = container
-    themeText.Parent = themeDropdown
-    themeBtn.Parent = themeDropdown
-    themeDropdown.Parent = container
-    saveBtn.Parent = container
-    container.Parent = frame
-    
-    return frame
-end
-
-function PiwHubUI:CreateDebugTab()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundTransparency = 1
-    frame.Visible = false
-    
-    -- Console output
-    local consoleFrame = Instance.new("Frame")
-    consoleFrame.Size = UDim2.new(1, 0, 1, -100)
-    consoleFrame.BackgroundColor3 = Colors.Darker
-    consoleFrame.BorderSizePixel = 0
-    
-    local consoleCorner = Instance.new("UICorner")
-    consoleCorner.CornerRadius = UDim.new(0, 8)
-    consoleCorner.Parent = consoleFrame
-    
-    self.ConsoleOutput = Instance.new("ScrollingFrame")
-    self.ConsoleOutput.Name = "ConsoleOutput"
-    self.ConsoleOutput.Size = UDim2.new(1, -20, 1, -20)
-    self.ConsoleOutput.Position = UDim2.new(0, 10, 0, 10)
-    self.ConsoleOutput.BackgroundTransparency = 1
-    self.ConsoleOutput.ScrollBarThickness = 3
-    self.ConsoleOutput.CanvasSize = UDim2.new(0, 0, 0, 1000)
-    
-    local consoleLabel = Instance.new("TextLabel")
-    consoleLabel.Text = "> AutoFish Debug Console"
-    consoleLabel.Font = Enum.Font.RobotoMono
-    consoleLabel.TextSize = 12
-    consoleLabel.TextColor3 = Colors.TextSecondary
-    consoleLabel.BackgroundTransparency = 1
-    consoleLabel.Size = UDim2.new(1, 0, 0, 20)
-    consoleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    consoleLabel.TextYAlignment = Enum.TextYAlignment.Top
-    consoleLabel.TextWrapped = true
-    consoleLabel.Parent = self.ConsoleOutput
-    
-    -- Debug buttons
-    local buttonFrame = Instance.new("Frame")
-    buttonFrame.Size = UDim2.new(1, 0, 0, 40)
-    buttonFrame.Position = UDim2.new(0, 0, 1, -90)
-    buttonFrame.BackgroundTransparency = 1
-    
-    local testBtn = Instance.new("TextButton")
-    testBtn.Text = "TEST DETECTION"
-    testBtn.Font = Enum.Font.GothamMedium
-    testBtn.TextSize = 14
-    testBtn.TextColor3 = Colors.Text
-    testBtn.BackgroundColor3 = Colors.Warning
-    testBtn.Size = UDim2.new(0.48, 0, 1, 0)
-    testBtn.Position = UDim2.new(0, 0, 0, 0)
-    testBtn.AutoButtonColor = false
-    
-    local testCorner = Instance.new("UICorner")
-    testCorner.CornerRadius = UDim.new(0, 8)
-    testCorner.Parent = testBtn
-    
-    local clearBtn = Instance.new("TextButton")
-    clearBtn.Text = "CLEAR CONSOLE"
-    clearBtn.Font = Enum.Font.GothamMedium
-    clearBtn.TextSize = 14
-    clearBtn.TextColor3 = Colors.Text
-    clearBtn.BackgroundColor3 = Colors.Danger
-    clearBtn.Size = UDim2.new(0.48, 0, 1, 0)
-    clearBtn.Position = UDim2.new(0.52, 0, 0, 0)
-    clearBtn.AutoButtonColor = false
-    
-    local clearCorner = Instance.new("UICorner")
-    clearCorner.CornerRadius = UDim.new(0, 8)
-    clearCorner.Parent = clearBtn
-    
-    testBtn.MouseButton1Click:Connect(function()
-        self:LogToConsole("Running detection test...")
-        self:LogToConsole("Test completed successfully")
-    end)
-    
-    clearBtn.MouseButton1Click:Connect(function()
-        consoleLabel.Text = "> AutoFish Debug Console"
-        self.ConsoleOutput.CanvasPosition = Vector2.new(0, 0)
-    end)
-    
-    -- Assemble
-    self.ConsoleOutput.Parent = consoleFrame
-    consoleFrame.Parent = frame
-    testBtn.Parent = buttonFrame
-    clearBtn.Parent = buttonFrame
-    buttonFrame.Parent = frame
-    
-    return frame
-end
-
-function PiwHubUI:CreateStatsTab()
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundTransparency = 1
-    frame.Visible = false
-    
-    -- Stats container
-    local statsGrid = Instance.new("Frame")
-    statsGrid.Size = UDim2.new(1, 0, 0, 300)
-    statsGrid.BackgroundTransparency = 1
-    
-    local stats = {
-        {"Total Fishes", "0", Colors.Text},
-        {"Legendary", "0", Color3.fromRGB(255, 215, 0)},
-        {"Mythical", "0", Color3.fromRGB(255, 100, 100)},
-        {"Divine", "0", Color3.fromRGB(255, 50, 255)},
-        {"Money Earned", "$0", Colors.Success},
-        {"Session Time", "0s", Colors.Primary}
-    }
-    
-    for i, statData in ipairs(stats) do
-        local row = math.floor((i-1)/2)
-        local col = (i-1) % 2
-        
-        local statFrame = Instance.new("Frame")
-        statFrame.Size = UDim2.new(0.48, 0, 0, 80)
-        statFrame.Position = UDim2.new(col * 0.52, 0, row * 100, 0)
-        statFrame.BackgroundColor3 = Colors.Darker
-        statFrame.BorderSizePixel = 0
-        
-        local statCorner = Instance.new("UICorner")
-        statCorner.CornerRadius = UDim.new(0, 8)
-        statCorner.Parent = statFrame
-        
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Text = statData[1]
-        nameLabel.Font = Enum.Font.GothamMedium
-        nameLabel.TextSize = 14
-        nameLabel.TextColor3 = Colors.TextSecondary
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.Size = UDim2.new(1, -20, 0, 30)
-        nameLabel.Position = UDim2.new(0, 10, 0, 10)
-        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        
-        local valueLabel = Instance.new("TextLabel")
-        valueLabel.Text = statData[2]
-        valueLabel.Font = Enum.Font.GothamBold
-        valueLabel.TextSize = 24
-        valueLabel.TextColor3 = statData[3]
-        valueLabel.BackgroundTransparency = 1
-        valueLabel.Size = UDim2.new(1, -20, 0, 40)
-        valueLabel.Position = UDim2.new(0, 10, 0, 30)
-        valueLabel.TextXAlignment = Enum.TextXAlignment.Left
-        
-        nameLabel.Parent = statFrame
-        valueLabel.Parent = statFrame
-        statFrame.Parent = statsGrid
-        
-        self.StatsLabels = self.StatsLabels or {}
-        self.StatsLabels[statData[1]] = valueLabel
+    if self.ScreenGui then
+        self.ScreenGui:Destroy()
     end
     
-    -- Refresh button
-    local refreshBtn = Instance.new("TextButton")
-    refreshBtn.Text = "REFRESH STATS"
-    refreshBtn.Font = Enum.Font.GothamBold
-    refreshBtn.TextSize = 16
-    refreshBtn.TextColor3 = Colors.Text
-    refreshBtn.BackgroundColor3 = Colors.Primary
-    refreshBtn.Size = UDim2.new(1, 0, 0, 50)
-    refreshBtn.Position = UDim2.new(0, 0, 0, 350)
-    refreshBtn.AutoButtonColor = false
-    
-    local refreshCorner = Instance.new("UICorner")
-    refreshCorner.CornerRadius = UDim.new(0, 8)
-    refreshCorner.Parent = refreshBtn
-    
-    refreshBtn.MouseButton1Click:Connect(function()
-        self:UpdateStatistics()
-    end)
-    
-    -- Auto-refresh loop
-    task.spawn(function()
-        while self.ScreenGui and self.ScreenGui.Parent do
-            self:UpdateStatistics()
-            task.wait(5)
-        end
-    end)
-    
-    statsGrid.Parent = frame
-    refreshBtn.Parent = frame
-    
-    return frame
+    self.Logger:Info(self.ServiceName, "UI destroyed")
 end
 
-function PiwHubUI:CreateToggle(label, defaultValue, callback)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 30)
-    frame.BackgroundTransparency = 1
-    
-    local labelText = Instance.new("TextLabel")
-    labelText.Text = label
-    labelText.Font = Enum.Font.GothamMedium
-    labelText.TextSize = 14
-    labelText.TextColor3 = Colors.Text
-    labelText.BackgroundTransparency = 1
-    labelText.Size = UDim2.new(0.7, 0, 1, 0)
-    labelText.Position = UDim2.new(0, 0, 0, 0)
-    labelText.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local toggle = Instance.new("TextButton")
-    toggle.Text = ""
-    toggle.BackgroundColor3 = defaultValue and Colors.Success or Colors.Danger
-    toggle.Size = UDim2.new(0, 50, 0, 25)
-    toggle.Position = UDim2.new(1, -50, 0.5, -12.5)
-    toggle.AutoButtonColor = false
-    
-    local toggleCorner = Instance.new("UICorner")
-    toggleCorner.CornerRadius = UDim.new(1, 0)
-    toggleCorner.Parent = toggle
-    
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 21, 0, 21)
-    knob.Position = UDim2.new(defaultValue and 0.58 or 0.02, 0, 0.5, -10.5)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    knob.BorderSizePixel = 0
-    
-    local knobCorner = Instance.new("UICorner")
-    knobCorner.CornerRadius = UDim.new(1, 0)
-    knobCorner.Parent = knob
-    
-    local isToggled = defaultValue
-    
-    toggle.MouseButton1Click:Connect(function()
-        isToggled = not isToggled
-        toggle.BackgroundColor3 = isToggled and Colors.Success or Colors.Danger
-        
-        local targetPos = isToggled and 0.58 or 0.02
-        TweenService:Create(knob, TweenInfo.new(0.2), {
-            Position = UDim2.new(targetPos, 0, 0.5, -10.5)
-        }):Play()
-        
-        if callback then
-            callback(isToggled)
-        end
-    end)
-    
-    knob.Parent = toggle
-    labelText.Parent = frame
-    toggle.Parent = frame
-    
-    return frame
-end
-
-function PiwHubUI:CreateSlider(label, min, max, step, defaultValue, suffix)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 70)
-    frame.BackgroundTransparency = 1
-    
-    local labelText = Instance.new("TextLabel")
-    labelText.Text = label
-    labelText.Font = Enum.Font.GothamMedium
-    labelText.TextSize = 14
-    labelText.TextColor3 = Colors.Text
-    labelText.BackgroundTransparency = 1
-    labelText.Size = UDim2.new(1, 0, 0, 20)
-    labelText.Position = UDim2.new(0, 0, 0, 0)
-    labelText.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local sliderTrack = Instance.new("Frame")
-    sliderTrack.Size = UDim2.new(1, 0, 0, 6)
-    sliderTrack.Position = UDim2.new(0, 0, 0, 30)
-    sliderTrack.BackgroundColor3 = Colors.Darker
-    sliderTrack.BorderSizePixel = 0
-    
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(1, 0)
-    trackCorner.Parent = sliderTrack
-    
-    local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new((defaultValue - min) / (max - min), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Colors.Primary
-    sliderFill.BorderSizePixel = 0
-    
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(1, 0)
-    fillCorner.Parent = sliderFill
-    
-    local sliderKnob = Instance.new("TextButton")
-    sliderKnob.Text = ""
-    sliderKnob.Size = UDim2.new(0, 20, 0, 20)
-    sliderKnob.Position = UDim2.new((defaultValue - min) / (max - min), -10, 0, -7)
-    sliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    sliderKnob.BorderSizePixel = 0
-    sliderKnob.AutoButtonColor = false
-    
-    local knobCorner = Instance.new("UICorner")
-    knobCorner.CornerRadius = UDim.new(1, 0)
-    knobCorner.Parent = sliderKnob
-    
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Text = defaultValue .. (suffix or "")
-    valueLabel.Font = Enum.Font.Gotham
-    valueLabel.TextSize = 12
-    valueLabel.TextColor3 = Colors.TextSecondary
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Size = UDim2.new(1, 0, 0, 20)
-    valueLabel.Position = UDim2.new(0, 0, 0, 45)
-    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
-    
-    -- Dragging logic
-    local isDragging = false
-    
-    local function updateValue(xPos)
-        local relative = math.clamp((xPos - sliderTrack.AbsolutePosition.X) / sliderTrack.AbsoluteSize.X, 0, 1)
-        local value = min + (max - min) * relative
-        value = math.floor(value / step + 0.5) * step
-        
-        sliderFill.Size = UDim2.new(relative, 0, 1, 0)
-        sliderKnob.Position = UDim2.new(relative, -10, 0, -7)
-        valueLabel.Text = string.format("%.1f", value) .. (suffix or "")
-        
-        if AutoFish then
-            if label == "Cast Delay" then
-                AutoFish:ToggleSetting("CastDelay", value)
-            elseif label == "Reel Delay" then
-                AutoFish:ToggleSetting("ReelDelay", value)
-            end
-        end
-    end
-    
-    sliderKnob.MouseButton1Down:Connect(function()
-        isDragging = true
-    end)
-    
-    game:GetService("UserInputService").InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            isDragging = false
-        end
-    end)
-    
-    game:GetService("RunService").RenderStepped:Connect(function()
-        if isDragging then
-            local mouse = game:GetService("UserInputService"):GetMouseLocation()
-            updateValue(mouse.X)
-        end
-    end)
-    
-    sliderFill.Parent = sliderTrack
-    sliderKnob.Parent = sliderTrack
-    sliderTrack.Parent = frame
-    labelText.Parent = frame
-    valueLabel.Parent = frame
-    
-    return frame
-end
-
-function PiwHubUI:SwitchTab(tabName)
-    if self.CurrentTab then
-        self.TabContents[self.CurrentTab].Visible = false
-        self.TabButtons[self.CurrentTab].TextColor3 = Colors.TextSecondary
-        TweenService:Create(self.TabButtons[self.CurrentTab], TweenInfo.new(0.2), {
-            BackgroundColor3 = Colors.Darker
-        }):Play()
-    end
-    
-    self.CurrentTab = tabName
-    self.TabContents[tabName].Visible = true
-    self.TabButtons[tabName].TextColor3 = Colors.Primary
-    TweenService:Create(self.TabButtons[tabName], TweenInfo.new(0.2), {
-        BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    }):Play()
-    
-    if tabName == "Statistics" then
-        self:UpdateStatistics()
-    end
-end
-
-function PiwHubUI:LogToConsole(message)
-    if self.ConsoleOutput then
-        local label = self.ConsoleOutput:FindFirstChildOfClass("TextLabel")
-        if label then
-            label.Text = label.Text .. "\n> " .. message
-            task.wait()
-            self.ConsoleOutput.CanvasPosition = Vector2.new(0, self.ConsoleOutput.CanvasSize.Y.Offset)
-        end
-    end
-end
-
-function PiwHubUI:UpdateStatistics()
-    if not self.StatsLabels then return end
-    
-    if AutoFish then
-        local stats = AutoFish:GetStats()
-        
-        if self.StatsLabels["Total Fishes"] then
-            self.StatsLabels["Total Fishes"].Text = tostring(stats.Total or 0)
-        end
-        if self.StatsLabels["Legendary"] then
-            self.StatsLabels["Legendary"].Text = tostring(stats.Legendary or 0)
-        end
-        if self.StatsLabels["Mythical"] then
-            self.StatsLabels["Mythical"].Text = tostring(stats.Mythical or 0)
-        end
-        if self.StatsLabels["Divine"] then
-            self.StatsLabels["Divine"].Text = tostring(stats.Divine or 0)
-        end
-        if self.StatsLabels["Money Earned"] then
-            self.StatsLabels["Money Earned"].Text = "$" .. tostring(stats.Money or 0)
-        end
-        if self.StatsLabels["Session Time"] then
-            local time = stats.SessionTime or 0
-            if time > 3600 then
-                self.StatsLabels["Session Time"].Text = string.format("%.1fh", time/3600)
-            elseif time > 60 then
-                self.StatsLabels["Session Time"].Text = string.format("%.0fm", time/60)
-            else
-                self.StatsLabels["Session Time"].Text = string.format("%.0fs", time)
-            end
-        end
-    end
-end
-
-function PiwHubUI:ShowNotification(message)
-    local notif = Instance.new("Frame")
-    notif.Size = UDim2.new(0, 300, 0, 60)
-    notif.Position = UDim2.new(1, -320, 1, -80)
-    notif.BackgroundColor3 = Colors.Dark
-    notif.BackgroundTransparency = 0.1
-    notif.BorderSizePixel = 0
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = notif
-    
-    local shadow = Instance.new("ImageLabel")
-    shadow.Name = "DropShadow"
-    shadow.Parent = notif
-    shadow.AnchorPoint = Vector2.new(0.5, 0.5)
-    shadow.BackgroundTransparency = 1
-    shadow.Position = UDim2.new(0.5, 0, 0.5, 4)
-    shadow.Size = UDim2.new(1, 44, 1, 44)
-    shadow.Image = "rbxassetid://6014261993"
-    shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-    shadow.ImageTransparency = 0.5
-    shadow.ScaleType = Enum.ScaleType.Slice
-    shadow.SliceCenter = Rect.new(49, 49, 450, 450)
-    shadow.ZIndex = -1
-    
-    local label = Instance.new("TextLabel")
-    label.Text = message
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 14
-    label.TextColor3 = Colors.Text
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -20, 1, -20)
-    label.Position = UDim2.new(0, 10, 0, 10)
-    label.TextWrapped = true
-    
-    label.Parent = notif
-    notif.Parent = self.ScreenGui
-    
-    -- Animate in
-    notif.Position = UDim2.new(1, 20, 1, -80)
-    local tweenIn = TweenService:Create(notif, TweenInfo.new(0.3), {
-        Position = UDim2.new(1, -320, 1, -80)
-    })
-    tweenIn:Play()
-    
-    -- Auto remove
-    task.delay(3, function()
-        if notif and notif.Parent then
-            local tweenOut = TweenService:Create(notif, TweenInfo.new(0.3), {
-                Position = UDim2.new(1, 20, 1, -80)
-            })
-            tweenOut:Play()
-            tweenOut.Completed:Connect(function()
-                notif:Destroy()
-            end)
-        end
-    end)
-end
-
-function PiwHubUI:MakeDraggable(dragFrame, mainFrame)
-    local dragging = false
-    local dragInput, mousePos, framePos
-    
-    dragFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            mousePos = input.Position
-            framePos = mainFrame.Position
-            
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-    
-    dragFrame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            dragInput = input
-        end
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - mousePos
-            mainFrame.Position = UDim2.new(
-                framePos.X.Scale, framePos.X.Offset + delta.X,
-                framePos.Y.Scale, framePos.Y.Offset + delta.Y
-            )
-        end
-    end)
-end
-
-function PiwHubUI:SetupKeybinds()
-    UserInputService.InputBegan:Connect(function(input, processed)
-        if not processed then
-            if input.KeyCode == Enum.KeyCode.RightControl then
-                self:ToggleVisibility()
-            elseif input.KeyCode == Enum.KeyCode.Insert then
-                self:ToggleVisibility()
-            end
-        end
-    end)
-end
-
-function PiwHubUI:ToggleVisibility()
-    self.IsVisible = not self.IsVisible
-    self.MainFrame.Visible = self.IsVisible
-end
-
-function PiwHubUI:ToggleMinimize()
-    self.Minimized = not self.Minimized
-    if self.Minimized then
-        self.MainFrame.Size = UDim2.new(0, 500, 0, 50)
-        self.ContentFrame.Visible = false
-        self.Tabs.Visible = false
-    else
-        self.MainFrame.Size = UDim2.new(0, 500, 0, 600)
-        self.ContentFrame.Visible = true
-        self.Tabs.Visible = true
-    end
-end
-
-function PiwHubUI:Close()
-    local tweenOut = TweenService:Create(self.MainFrame, TweenInfo.new(0.3), {
-        Position = UDim2.new(0.5, -250, 0.4, -300),
-        BackgroundTransparency = 1
-    })
-    tweenOut:Play()
-    tweenOut.Completed:Connect(function()
-        if self.ScreenGui then
-            self.ScreenGui:Destroy()
-        end
-    end)
-end
-
--- Initialize UI
-local UI = PiwHubUI.new()
-UI:CreateWindow()
-
--- Load modules
-UI:LogToConsole("PiwHub AutoFish UI Loaded")
-UI:LogToConsole("Version 3.0 - BLATANT Edition")
-UI:LogToConsole("Game: " .. game.PlaceId)
-
--- Update stats every 5 seconds
-task.spawn(function()
-    while task.wait(5) do
-        UI:UpdateStatistics()
-    end
-end)
-
-return UI
+return FishingUI
